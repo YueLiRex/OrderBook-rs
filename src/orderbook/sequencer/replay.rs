@@ -1,34 +1,15 @@
-/******************************************************************************
-   Author: Joaquín Béjar García
-   Email: jb@taunais.com
-   Date: 27/2/26
-******************************************************************************/
-
 //! Deterministic replay engine for event journals.
 //!
 //! [`ReplayEngine`] reads a sequence of [`SequencerEvent`]s from a [`Journal`]
 //! and re-applies each command to a fresh [`OrderBook`], producing an
 //! identical final state. This enables disaster recovery, audit compliance,
 //! and state verification.
-//!
-//! # Examples
-//!
-//! ```no_run
-//! use orderbook_rs::sequencer::journal::{Journal, InMemoryJournal};
-//! use orderbook_rs::sequencer::replay::ReplayEngine;
-//!
-//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let journal: InMemoryJournal<()> = InMemoryJournal::new();
-//! let (book, last_seq) = ReplayEngine::replay_from(&journal, 0, "BTC/USD")?;
-//! println!("Replayed up to sequence {last_seq}");
-//! # Ok(())
-//! # }
-//! ```
 
-use super::command::SequencerCommand;
-use super::event::SequencerEvent;
+use super::error::JournalError;
 use super::journal::Journal;
+use super::types::{SequencerCommand, SequencerEvent, SequencerResult};
 use crate::orderbook::{OrderBook, OrderBookError, OrderBookSnapshot};
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use thiserror::Error;
 
@@ -70,30 +51,24 @@ pub enum ReplayError {
     /// The replayed state does not match the expected snapshot.
     #[error("snapshot mismatch: replayed state diverges from expected snapshot")]
     SnapshotMismatch,
+
+    /// Journal read error during replay.
+    #[error("journal error during replay: {0}")]
+    JournalError(#[from] JournalError),
 }
 
 /// Stateless replay engine that reconstructs [`OrderBook`] state from a [`Journal`].
 ///
 /// All methods are associated functions (no `&self` receiver) — `ReplayEngine`
 /// holds no state itself. Use it as a namespace for replay operations.
-///
-/// # Examples
-///
-/// ```no_run
-/// use orderbook_rs::sequencer::journal::{Journal, InMemoryJournal};
-/// use orderbook_rs::sequencer::replay::ReplayEngine;
-///
-/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let journal: InMemoryJournal<()> = InMemoryJournal::new();
-/// let (book, last_seq) = ReplayEngine::replay_from(&journal, 0, "BTC/USD")?;
-/// # Ok(())
-/// # }
-/// ```
 pub struct ReplayEngine<T> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
+impl<T> ReplayEngine<T>
+where
+    T: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync + Default + 'static,
+{
     /// Replays all events from `from_sequence` onwards onto a fresh [`OrderBook`].
     ///
     /// Returns the reconstructed book and the sequence number of the last
@@ -111,6 +86,7 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
     /// - [`ReplayError::EmptyJournal`] if the journal has no events
     /// - [`ReplayError::InvalidSequence`] if `from_sequence` > last journal sequence
     /// - [`ReplayError::OrderBookError`] if a command fails unexpectedly during replay
+    /// - [`ReplayError::JournalError`] if reading from the journal fails
     pub fn replay_from(
         journal: &impl Journal<T>,
         from_sequence: u64,
@@ -140,64 +116,47 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
         symbol: &str,
         progress: impl Fn(u64, u64),
     ) -> Result<(OrderBook<T>, u64), ReplayError> {
-        if journal.is_empty() {
+        let last_seq_opt = journal.last_sequence();
+
+        if last_seq_opt.is_none() {
             return Err(ReplayError::EmptyJournal);
         }
 
-        if journal
-            .last_sequence()
-            .is_some_and(|last| from_sequence > last)
-        {
+        let last_seq = last_seq_opt.unwrap();
+        if from_sequence > last_seq {
             return Err(ReplayError::InvalidSequence {
                 from_sequence,
-                last_sequence: journal.last_sequence().unwrap_or(0),
+                last_sequence: last_seq,
             });
         }
 
         let book = OrderBook::new(symbol);
-        let mut last_seq = 0u64;
+        let mut last_applied_seq = 0u64;
         let mut count = 0u64;
+        let mut expected_seq = from_sequence;
 
-        for event in journal.read_from(from_sequence) {
+        let iter = journal.read_from(from_sequence)?;
+
+        for entry_result in iter {
+            let entry = entry_result?;
+            let event = &entry.event;
+
+            // Gap detection
+            if event.sequence_num != expected_seq {
+                return Err(ReplayError::SequenceGap {
+                    expected: expected_seq,
+                    found: event.sequence_num,
+                });
+            }
+
             Self::apply_event(&book, event)?;
-            last_seq = event.sequence_num;
+            last_applied_seq = event.sequence_num;
             count = count.saturating_add(1);
-            progress(count, last_seq);
+            expected_seq = expected_seq.saturating_add(1);
+            progress(count, last_applied_seq);
         }
 
-        Ok((book, last_seq))
-    }
-
-    /// Returns the events with `from_sequence <= sequence_num <= to_sequence`.
-    ///
-    /// No OrderBook is constructed — this is a pure slice of the journal.
-    /// Useful for auditing, debugging, or feeding events to external consumers.
-    ///
-    /// # Errors
-    ///
-    /// - [`ReplayError::EmptyJournal`] if the journal has no events
-    /// - [`ReplayError::InvalidSequence`] if `from_sequence` > last journal sequence
-    #[must_use = "returns the event slice — use it or it is wasted work"]
-    pub fn replay_range(
-        journal: &impl Journal<T>,
-        from_sequence: u64,
-        to_sequence: u64,
-    ) -> Result<Vec<&SequencerEvent<T>>, ReplayError> {
-        if journal.is_empty() {
-            return Err(ReplayError::EmptyJournal);
-        }
-
-        if journal
-            .last_sequence()
-            .is_some_and(|last| from_sequence > last)
-        {
-            return Err(ReplayError::InvalidSequence {
-                from_sequence,
-                last_sequence: journal.last_sequence().unwrap_or(0),
-            });
-        }
-
-        Ok(journal.read_range(from_sequence, to_sequence).collect())
+        Ok((book, last_applied_seq))
     }
 
     /// Replays the full journal and compares the result to an expected snapshot.
@@ -210,6 +169,7 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
     ///
     /// - [`ReplayError::EmptyJournal`] if the journal has no events
     /// - [`ReplayError::OrderBookError`] if replay fails
+    /// - [`ReplayError::JournalError`] if reading from the journal fails
     pub fn verify(
         journal: &impl Journal<T>,
         expected_snapshot: &OrderBookSnapshot,
@@ -225,7 +185,7 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
     /// that failed at write time and must not be re-applied during replay.
     fn apply_event(book: &OrderBook<T>, event: &SequencerEvent<T>) -> Result<(), ReplayError> {
         // Skip events whose original execution was rejected.
-        if event.result.is_rejected() {
+        if matches!(event.result, SequencerResult::Rejected { .. }) {
             return Ok(());
         }
 
@@ -238,10 +198,21 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
                     })?;
             }
             SequencerCommand::CancelOrder(id) => {
-                // cancel_order returns Ok(None) when the order was already
-                // removed by a prior cancel. This is not an error during
-                // replay — we tolerate it silently.
                 book.cancel_order(*id)
+                    .map_err(|e| ReplayError::OrderBookError {
+                        sequence_num: event.sequence_num,
+                        source: e,
+                    })?;
+            }
+            SequencerCommand::UpdateOrder(update) => {
+                book.update_order(*update)
+                    .map_err(|e| ReplayError::OrderBookError {
+                        sequence_num: event.sequence_num,
+                        source: e,
+                    })?;
+            }
+            SequencerCommand::MarketOrder { id, quantity, side } => {
+                book.submit_market_order(*id, *quantity, *side)
                     .map_err(|e| ReplayError::OrderBookError {
                         sequence_num: event.sequence_num,
                         source: e,
@@ -262,28 +233,6 @@ impl<T: Clone + Send + Sync + Default + 'static> ReplayEngine<T> {
 ///
 /// Timestamps are intentionally excluded from comparison because replayed
 /// books may be created at a different wall-clock time than the original.
-///
-/// # Examples
-///
-/// ```
-/// use orderbook_rs::sequencer::replay::snapshots_match;
-/// use orderbook_rs::OrderBookSnapshot;
-/// use pricelevel::PriceLevelSnapshot;
-///
-/// let a = OrderBookSnapshot {
-///     symbol: "BTC/USD".to_string(),
-///     timestamp: 0,
-///     bids: vec![],
-///     asks: vec![],
-/// };
-/// let b = OrderBookSnapshot {
-///     symbol: "BTC/USD".to_string(),
-///     timestamp: 999,
-///     bids: vec![],
-///     asks: vec![],
-/// };
-/// assert!(snapshots_match(&a, &b));
-/// ```
 #[must_use]
 pub fn snapshots_match(actual: &OrderBookSnapshot, expected: &OrderBookSnapshot) -> bool {
     if actual.symbol != expected.symbol {
@@ -293,14 +242,14 @@ pub fn snapshots_match(actual: &OrderBookSnapshot, expected: &OrderBookSnapshot)
     // Compare bids sorted by price descending (highest bid first)
     let mut actual_bids: Vec<_> = actual.bids.iter().collect();
     let mut expected_bids: Vec<_> = expected.bids.iter().collect();
-    actual_bids.sort_by(|a, b| b.price.cmp(&a.price));
-    expected_bids.sort_by(|a, b| b.price.cmp(&a.price));
+    actual_bids.sort_by(|a, b| b.price().cmp(&a.price()));
+    expected_bids.sort_by(|a, b| b.price().cmp(&a.price()));
 
     if actual_bids.len() != expected_bids.len() {
         return false;
     }
     for (a, b) in actual_bids.iter().zip(expected_bids.iter()) {
-        if a.price != b.price || a.visible_quantity != b.visible_quantity {
+        if a.price() != b.price() || a.visible_quantity() != b.visible_quantity() {
             return false;
         }
     }
@@ -308,14 +257,14 @@ pub fn snapshots_match(actual: &OrderBookSnapshot, expected: &OrderBookSnapshot)
     // Compare asks sorted by price ascending (lowest ask first)
     let mut actual_asks: Vec<_> = actual.asks.iter().collect();
     let mut expected_asks: Vec<_> = expected.asks.iter().collect();
-    actual_asks.sort_by_key(|l| l.price);
-    expected_asks.sort_by_key(|l| l.price);
+    actual_asks.sort_by_key(|l| l.price());
+    expected_asks.sort_by_key(|l| l.price());
 
     if actual_asks.len() != expected_asks.len() {
         return false;
     }
     for (a, b) in actual_asks.iter().zip(expected_asks.iter()) {
-        if a.price != b.price || a.visible_quantity != b.visible_quantity {
+        if a.price() != b.price() || a.visible_quantity() != b.visible_quantity() {
             return false;
         }
     }

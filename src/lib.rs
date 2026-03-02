@@ -233,7 +233,6 @@
 //! This analysis confirms that the system design is highly scalable and appropriate for demanding financial applications requiring high-speed processing with data consistency.
 
 pub mod orderbook;
-pub mod sequencer;
 
 pub mod prelude;
 mod utils;
@@ -252,8 +251,8 @@ pub use orderbook::iterators::LevelInfo;
 pub use orderbook::manager::{BookManager, BookManagerStd, BookManagerTokio};
 pub use orderbook::market_impact::{MarketImpact, OrderSimulation};
 pub use orderbook::sequencer::{
-    Journal, JournalEntry, JournalError, JournalReadIter, SequencerCommand, SequencerEvent,
-    SequencerResult,
+    InMemoryJournal, Journal, JournalEntry, JournalError, JournalReadIter, ReplayEngine,
+    ReplayError, SequencerCommand, SequencerEvent, SequencerResult, snapshots_match,
 };
 pub use orderbook::serialization::{EventSerializer, JsonEventSerializer, SerializationError};
 pub use orderbook::snapshot::{EnrichedSnapshot, MetricFlags};
@@ -263,12 +262,6 @@ pub use orderbook::trade::{TradeListener, TradeResult};
 #[cfg(feature = "nats")]
 pub use orderbook::{BookChangeBatch, BookChangeEntry, NatsBookChangePublisher};
 pub use orderbook::{FeeSchedule, MassCancelResult, OrderBook, OrderBookError, OrderBookSnapshot};
-pub use sequencer::journal::{InMemoryJournal, Journal};
-pub use sequencer::replay::{ReplayEngine, ReplayError, snapshots_match};
-pub use sequencer::{
-    Sequencer, SequencerCommand, SequencerError, SequencerEvent, SequencerHandle, SequencerReceipt,
-    SequencerResult,
-};
 pub use utils::current_time_millis;
 
 /// Legacy type alias for `OrderBook<()>` to maintain backward compatibility.

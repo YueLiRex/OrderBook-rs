@@ -11,6 +11,9 @@
 //! - [`JournalError`] — error type for journal operations
 //! - [`Journal`] — trait for append-only event journals
 //! - [`JournalEntry`] — a single entry read back from the journal
+//! - [`InMemoryJournal`] — in-memory journal implementation for testing
+//! - [`ReplayEngine`] — deterministic replay engine for event journals
+//! - [`ReplayError`] — error type for replay operations
 //! - `FileJournal` — memory-mapped file journal implementation (requires `journal` feature)
 //!
 //! # Feature Gate
@@ -30,12 +33,16 @@ pub mod types;
 #[cfg(feature = "journal")]
 pub mod file_journal;
 
+pub mod in_memory_journal;
 pub mod journal;
+pub mod replay;
 
 pub use error::JournalError;
 #[cfg(feature = "journal")]
 pub use file_journal::FileJournal;
+pub use in_memory_journal::InMemoryJournal;
 pub use journal::{
     ENTRY_CRC_SIZE, ENTRY_HEADER_SIZE, ENTRY_OVERHEAD, Journal, JournalEntry, JournalReadIter,
 };
+pub use replay::{ReplayEngine, ReplayError, snapshots_match};
 pub use types::{SequencerCommand, SequencerEvent, SequencerResult};

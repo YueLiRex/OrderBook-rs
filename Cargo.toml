@@ -39,15 +39,12 @@ serde = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "time"] }
 bitflags = { workspace = true }
-<<<<<<< HEAD
 thiserror = { workspace = true }
-=======
 async-nats = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
 crc32fast = { workspace = true, optional = true }
 memmap2 = { workspace = true, optional = true }
->>>>>>> origin/main
 
 [features]
 default = []
@@ -93,16 +90,11 @@ sha2 = "0.10"
 tokio = { version = "1.49", features = ["sync", "rt", "time"] }
 crossbeam-skiplist = "0.1"
 crossbeam = "0.8"
-<<<<<<< HEAD
-bitflags = { version = "2.10", features = ["serde"] }
-thiserror = "2"
-tracing-subscriber = "0.3"
-=======
 bitflags = { version = "2.11", features = ["serde"] }
+thiserror = "2"
 tracing-subscriber = "0.3"
 async-nats = "0.46"
 bytes = "1"
 bincode = "1"
 crc32fast = "1"
 memmap2 = "0.9"
->>>>>>> origin/main

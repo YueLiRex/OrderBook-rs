@@ -59,23 +59,16 @@ pub use crate::orderbook::nats_book_change::{
     BookChangeBatch, BookChangeEntry, NatsBookChangePublisher,
 };
 
-// Sequencer types and journal
+// Sequencer and journal types
 #[cfg(feature = "journal")]
 pub use crate::orderbook::sequencer::FileJournal;
-pub use crate::orderbook::sequencer::journal::{Journal, JournalEntry};
 pub use crate::orderbook::sequencer::{
-    JournalError, JournalReadIter, SequencerCommand, SequencerEvent, SequencerResult,
+    InMemoryJournal, Journal, JournalEntry, JournalError, JournalReadIter, ReplayEngine,
+    ReplayError, SequencerCommand, SequencerEvent, SequencerResult, snapshots_match,
 };
 
 // Utility functions
 pub use crate::utils::current_time_millis;
-
-// Sequencer types
-pub use crate::sequencer::replay::snapshots_match;
-pub use crate::sequencer::{
-    InMemoryJournal, Journal, ReplayEngine, ReplayError, Sequencer, SequencerCommand,
-    SequencerError, SequencerEvent, SequencerHandle, SequencerReceipt, SequencerResult,
-};
 
 // Type aliases for common use cases
 pub use crate::{DefaultOrderBook, DefaultOrderType, LegacyOrderBook, LegacyOrderType};
