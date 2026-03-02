@@ -126,10 +126,7 @@ where
             let trade_event = TradeEvent {
                 symbol: trade_result.symbol.clone(),
                 trade_result: trade_result.clone(),
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64,
+                timestamp: crate::current_time_millis(),
             };
 
             if let Err(e) = sender.send(trade_event) {
@@ -263,10 +260,7 @@ where
             let trade_event = TradeEvent {
                 symbol: trade_result.symbol.clone(),
                 trade_result: trade_result.clone(),
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64,
+                timestamp: crate::current_time_millis(),
             };
 
             if let Err(e) = sender.send(trade_event) {
