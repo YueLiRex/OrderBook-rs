@@ -517,13 +517,15 @@ fn in_memory_journal_verify_integrity_always_ok() {
 
 #[test]
 fn journal_error_display_io_with_path() {
+    let path = std::env::temp_dir().join("journal");
+    let path_str = path.to_string_lossy().into_owned();
     let err = orderbook_rs::JournalError::Io {
         message: "disk full".to_string(),
-        path: Some(std::path::PathBuf::from("/tmp/journal")),
+        path: Some(path),
     };
     let display = err.to_string();
     assert!(display.contains("disk full"));
-    assert!(display.contains("/tmp/journal"));
+    assert!(display.contains(&path_str));
 }
 
 #[test]
