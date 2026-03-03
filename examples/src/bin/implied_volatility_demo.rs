@@ -23,7 +23,7 @@ use pricelevel::{Id, Side, TimeInForce, setup_logger};
 use tracing::info;
 
 fn main() {
-    setup_logger();
+    let _ = setup_logger();
     info!("=== Implied Volatility Calculation Demo ===\n");
 
     // Demo 1: Basic IV calculation

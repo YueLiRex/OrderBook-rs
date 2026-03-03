@@ -25,7 +25,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("Market Metrics Example");
 
     // Create a realistic order book with liquidity

@@ -32,7 +32,7 @@ pub struct OrderMetadata {
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("OrderBook High-Frequency Trading Simulation");
     info!("===========================================");
     info!("Symbol: {}", SYMBOL);

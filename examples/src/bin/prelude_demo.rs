@@ -8,7 +8,7 @@ use orderbook_rs::prelude::*;
 
 fn main() {
     // Set up logging
-    pricelevel::setup_logger();
+    let _ = pricelevel::setup_logger();
 
     println!("=== Prelude Demo ===\n");
     println!("This example demonstrates using the prelude module for convenient imports.\n");

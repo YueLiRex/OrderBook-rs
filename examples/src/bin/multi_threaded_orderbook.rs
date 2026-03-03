@@ -12,7 +12,7 @@ const TEST_DURATION_SECS: u64 = 5;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("Multi-threaded OrderBook Performance Test");
     info!("----------------------------------------");
     info!("Threads: {}", THREAD_COUNT);

@@ -15,7 +15,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("=== Market Trades Demo ===\n");
 
     // Create a container to store all trades

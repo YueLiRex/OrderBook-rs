@@ -28,7 +28,7 @@ use tracing::info;
 type OrderBook = orderbook_rs::OrderBook<()>;
 
 fn main() {
-    setup_logger();
+    let _ = setup_logger();
 
     info!("=== Special Orders Demo ===");
     info!("Demonstrating PeggedOrder and TrailingStop order types\n");

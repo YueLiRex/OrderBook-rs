@@ -13,7 +13,7 @@ const TEST_DURATION_MS: u64 = 1000; // Shorter duration for faster testing
 const SYMBOL: &str = "TEST/USD";
 
 fn main() {
-    setup_logger();
+    let _ = setup_logger();
     info!("Price Level Distribution Debug Test");
     info!("===================================");
 

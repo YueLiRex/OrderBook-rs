@@ -5,7 +5,7 @@ use std::error::Error;
 use tracing::info;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    setup_logger();
+    let _ = setup_logger();
     // Initialize an order book for a demo symbol
     let book = DefaultOrderBook::new("SNAPSHOT/RESTORE");
 

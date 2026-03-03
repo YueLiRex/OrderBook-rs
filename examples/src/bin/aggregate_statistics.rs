@@ -21,7 +21,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("Aggregate Statistics Example");
 
     // Create order book with realistic depth

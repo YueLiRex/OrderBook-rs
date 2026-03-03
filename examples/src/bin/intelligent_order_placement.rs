@@ -23,7 +23,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("Intelligent Order Placement Example");
 
     // Create an order book with realistic depth

@@ -16,11 +16,14 @@ pub fn register_benchmarks(c: &mut Criterion) {
                 b.iter_with_setup(
                     || {
                         let book: OrderBook<()> = OrderBook::new("BENCH");
-                        // Populate the book: half bids, half asks across price levels
+                        // Populate the book: half bids at low prices, half asks at high prices
                         for i in 0..count {
                             let id = Id::new_uuid();
-                            let price = 1000 + (i % 500) as u128;
-                            let side = if i % 2 == 0 { Side::Buy } else { Side::Sell };
+                            let (price, side) = if i % 2 == 0 {
+                                (1000 + (i / 2 % 500) as u128, Side::Buy)
+                            } else {
+                                (2000 + (i / 2 % 500) as u128, Side::Sell)
+                            };
                             let _ =
                                 book.add_limit_order(id, price, 10, side, TimeInForce::Gtc, None);
                         }
@@ -79,8 +82,11 @@ pub fn register_benchmarks(c: &mut Criterion) {
                         let user = pricelevel::Hash32::new([1u8; 32]);
                         for i in 0..count {
                             let id = Id::new_uuid();
-                            let price = 1000 + (i % 500) as u128;
-                            let side = if i % 2 == 0 { Side::Buy } else { Side::Sell };
+                            let (price, side) = if i % 2 == 0 {
+                                (1000 + (i / 2 % 500) as u128, Side::Buy)
+                            } else {
+                                (2000 + (i / 2 % 500) as u128, Side::Sell)
+                            };
                             let _ = book.add_limit_order_with_user(
                                 id,
                                 price,

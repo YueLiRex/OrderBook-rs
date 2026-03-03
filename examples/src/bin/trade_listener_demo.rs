@@ -13,7 +13,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("=== Trade Listener Demo ===\n");
 
     // Create a trade listener that displays trades in real-time

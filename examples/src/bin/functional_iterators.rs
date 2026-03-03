@@ -20,7 +20,7 @@ use tracing::info;
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("Functional Iterators Example");
 
     // Create an order book with realistic depth

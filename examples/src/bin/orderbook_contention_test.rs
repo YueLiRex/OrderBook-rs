@@ -16,7 +16,7 @@ const SYMBOL: &str = "TEST/USD";
 
 fn main() {
     // Set up logging
-    setup_logger();
+    let _ = setup_logger();
     info!("OrderBook Contention Patterns Test");
     info!("==================================");
     info!("Threads: {}", THREAD_COUNT);
