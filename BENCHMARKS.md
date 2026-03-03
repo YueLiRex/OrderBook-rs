@@ -24,7 +24,7 @@ cargo bench --all-features
 |---|---|---|---|
 | `journal_append` | 3.7 µs | 22.6 µs | 562 µs |
 | `replay_from_journal` | 84 µs | 722 µs | 7.88 ms |
-| `replay_verify` | — | — | — |
+| `replay_verify` | 219 µs | 889 µs | — |
 
 ## Order Operations (existing)
 
