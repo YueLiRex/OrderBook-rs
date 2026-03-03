@@ -191,8 +191,8 @@ const DEFAULT_RETENTION_CAPACITY: usize = 10_000;
 ///
 /// Stores the current [`OrderStatus`] for every order that has been
 /// submitted to the book. Terminal states (`Filled`, `Cancelled`,
-/// `Rejected`) are retained up to [`retention_capacity`] entries; when
-/// the limit is exceeded, the oldest terminal entries are evicted (FIFO).
+/// `Rejected`) are retained up to a configurable capacity (default 10,000);
+/// when the limit is exceeded, the oldest terminal entries are evicted (FIFO).
 ///
 /// # Thread Safety
 ///

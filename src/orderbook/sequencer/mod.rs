@@ -11,9 +11,9 @@
 //! - [`JournalError`] — error type for journal operations
 //! - [`Journal`] — trait for append-only event journals
 //! - [`JournalEntry`] — a single entry read back from the journal
-//! - [`InMemoryJournal`] — in-memory journal implementation for testing
-//! - [`ReplayEngine`] — deterministic replay engine for event journals
-//! - [`ReplayError`] — error type for replay operations
+//! - [`in_memory_journal::InMemoryJournal`] — in-memory journal implementation for testing
+//! - [`replay::ReplayEngine`] — deterministic replay engine for event journals
+//! - [`replay::ReplayError`] — error type for replay operations
 //! - `FileJournal` — memory-mapped file journal implementation (requires `journal` feature)
 //!
 //! # Feature Gate
