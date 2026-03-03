@@ -216,3 +216,348 @@ impl From<PriceLevelError> for OrderBookError {
         OrderBookError::PriceLevelError(err)
     }
 }
+
+impl Clone for OrderBookError {
+    fn clone(&self) -> Self {
+        match self {
+            OrderBookError::PriceLevelError(err) => {
+                // PriceLevelError doesn't implement Clone, so we manually clone each variant
+                let cloned_err = match err {
+                    PriceLevelError::ParseError { message } => PriceLevelError::ParseError {
+                        message: message.clone(),
+                    },
+                    PriceLevelError::InvalidFormat => PriceLevelError::InvalidFormat,
+                    PriceLevelError::UnknownOrderType(s) => {
+                        PriceLevelError::UnknownOrderType(s.clone())
+                    }
+                    PriceLevelError::MissingField(s) => PriceLevelError::MissingField(s.clone()),
+                    PriceLevelError::InvalidFieldValue { field, value } => {
+                        PriceLevelError::InvalidFieldValue {
+                            field: field.clone(),
+                            value: value.clone(),
+                        }
+                    }
+                    PriceLevelError::InvalidOperation { message } => {
+                        PriceLevelError::InvalidOperation {
+                            message: message.clone(),
+                        }
+                    }
+                    PriceLevelError::SerializationError { message } => {
+                        PriceLevelError::SerializationError {
+                            message: message.clone(),
+                        }
+                    }
+                    PriceLevelError::DeserializationError { message } => {
+                        PriceLevelError::DeserializationError {
+                            message: message.clone(),
+                        }
+                    }
+                    PriceLevelError::ChecksumMismatch { expected, actual } => {
+                        PriceLevelError::ChecksumMismatch {
+                            expected: expected.clone(),
+                            actual: actual.clone(),
+                        }
+                    }
+                };
+                OrderBookError::PriceLevelError(cloned_err)
+            }
+            OrderBookError::OrderNotFound(s) => OrderBookError::OrderNotFound(s.clone()),
+            OrderBookError::InvalidPriceLevel(p) => OrderBookError::InvalidPriceLevel(*p),
+            OrderBookError::PriceCrossing {
+                price,
+                side,
+                opposite_price,
+            } => OrderBookError::PriceCrossing {
+                price: *price,
+                side: *side,
+                opposite_price: *opposite_price,
+            },
+            OrderBookError::InsufficientLiquidity {
+                side,
+                requested,
+                available,
+            } => OrderBookError::InsufficientLiquidity {
+                side: *side,
+                requested: *requested,
+                available: *available,
+            },
+            OrderBookError::InvalidOperation { message } => OrderBookError::InvalidOperation {
+                message: message.clone(),
+            },
+            OrderBookError::SerializationError { message } => OrderBookError::SerializationError {
+                message: message.clone(),
+            },
+            OrderBookError::DeserializationError { message } => {
+                OrderBookError::DeserializationError {
+                    message: message.clone(),
+                }
+            }
+            OrderBookError::ChecksumMismatch { expected, actual } => {
+                OrderBookError::ChecksumMismatch {
+                    expected: expected.clone(),
+                    actual: actual.clone(),
+                }
+            }
+            OrderBookError::InvalidTickSize { price, tick_size } => {
+                OrderBookError::InvalidTickSize {
+                    price: *price,
+                    tick_size: *tick_size,
+                }
+            }
+            OrderBookError::InvalidLotSize { quantity, lot_size } => {
+                OrderBookError::InvalidLotSize {
+                    quantity: *quantity,
+                    lot_size: *lot_size,
+                }
+            }
+            OrderBookError::OrderSizeOutOfRange { quantity, min, max } => {
+                OrderBookError::OrderSizeOutOfRange {
+                    quantity: *quantity,
+                    min: *min,
+                    max: *max,
+                }
+            }
+            OrderBookError::MissingUserId { order_id } => OrderBookError::MissingUserId {
+                order_id: *order_id,
+            },
+            OrderBookError::SelfTradePrevented {
+                mode,
+                taker_order_id,
+                user_id,
+            } => OrderBookError::SelfTradePrevented {
+                mode: *mode,
+                taker_order_id: *taker_order_id,
+                user_id: *user_id,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pricelevel::{Hash32, OrderId};
+
+    #[test]
+    fn test_clone_order_not_found() {
+        let error = OrderBookError::OrderNotFound("order123".to_string());
+        let cloned = error.clone();
+        assert!(matches!(cloned, OrderBookError::OrderNotFound(ref s) if s == "order123"));
+    }
+
+    #[test]
+    fn test_clone_invalid_price_level() {
+        let error = OrderBookError::InvalidPriceLevel(12345);
+        let cloned = error.clone();
+        assert!(matches!(cloned, OrderBookError::InvalidPriceLevel(12345)));
+    }
+
+    #[test]
+    fn test_clone_price_crossing() {
+        let error = OrderBookError::PriceCrossing {
+            price: 100,
+            side: Side::Buy,
+            opposite_price: 99,
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::PriceCrossing {
+                price: 100,
+                side: Side::Buy,
+                opposite_price: 99
+            }
+        ));
+    }
+
+    #[test]
+    fn test_clone_insufficient_liquidity() {
+        let error = OrderBookError::InsufficientLiquidity {
+            side: Side::Sell,
+            requested: 1000,
+            available: 500,
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::InsufficientLiquidity {
+                side: Side::Sell,
+                requested: 1000,
+                available: 500
+            }
+        ));
+    }
+
+    #[test]
+    fn test_clone_invalid_operation() {
+        let error = OrderBookError::InvalidOperation {
+            message: "Cannot cancel filled order".to_string(),
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::InvalidOperation { ref message } if message == "Cannot cancel filled order"
+        ));
+    }
+
+    #[test]
+    fn test_clone_serialization_error() {
+        let error = OrderBookError::SerializationError {
+            message: "Failed to serialize".to_string(),
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::SerializationError { ref message } if message == "Failed to serialize"
+        ));
+    }
+
+    #[test]
+    fn test_clone_checksum_mismatch() {
+        let error = OrderBookError::ChecksumMismatch {
+            expected: "abc123".to_string(),
+            actual: "def456".to_string(),
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::ChecksumMismatch { ref expected, ref actual }
+            if expected == "abc123" && actual == "def456"
+        ));
+    }
+
+    #[test]
+    fn test_clone_invalid_tick_size() {
+        let error = OrderBookError::InvalidTickSize {
+            price: 10050,
+            tick_size: 100,
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::InvalidTickSize {
+                price: 10050,
+                tick_size: 100
+            }
+        ));
+    }
+
+    #[test]
+    fn test_clone_invalid_lot_size() {
+        let error = OrderBookError::InvalidLotSize {
+            quantity: 75,
+            lot_size: 10,
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::InvalidLotSize {
+                quantity: 75,
+                lot_size: 10
+            }
+        ));
+    }
+
+    #[test]
+    fn test_clone_order_size_out_of_range() {
+        let error = OrderBookError::OrderSizeOutOfRange {
+            quantity: 5,
+            min: Some(10),
+            max: Some(1000),
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::OrderSizeOutOfRange {
+                quantity: 5,
+                min: Some(10),
+                max: Some(1000)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_clone_missing_user_id() {
+        let order_id = OrderId::new_uuid();
+        let error = OrderBookError::MissingUserId { order_id };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::MissingUserId { order_id: id } if id == order_id
+        ));
+    }
+
+    #[test]
+    fn test_clone_self_trade_prevented() {
+        let taker_id = OrderId::new_uuid();
+        let user_id = Hash32::from([1u8; 32]);
+        let error = OrderBookError::SelfTradePrevented {
+            mode: crate::orderbook::stp::STPMode::CancelMaker,
+            taker_order_id: taker_id,
+            user_id,
+        };
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::SelfTradePrevented {
+                mode: crate::orderbook::stp::STPMode::CancelMaker,
+                taker_order_id: id,
+                user_id: uid
+            } if id == taker_id && uid == user_id
+        ));
+    }
+
+    #[test]
+    fn test_clone_price_level_error_parse_error() {
+        let price_level_err = PriceLevelError::ParseError {
+            message: "Parse failed".to_string(),
+        };
+        let error = OrderBookError::PriceLevelError(price_level_err);
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::PriceLevelError(PriceLevelError::ParseError { ref message })
+            if message == "Parse failed"
+        ));
+    }
+
+    #[test]
+    fn test_clone_price_level_error_invalid_format() {
+        let price_level_err = PriceLevelError::InvalidFormat;
+        let error = OrderBookError::PriceLevelError(price_level_err);
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::PriceLevelError(PriceLevelError::InvalidFormat)
+        ));
+    }
+
+    #[test]
+    fn test_clone_price_level_error_unknown_order_type() {
+        let price_level_err = PriceLevelError::UnknownOrderType("CUSTOM".to_string());
+        let error = OrderBookError::PriceLevelError(price_level_err);
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::PriceLevelError(PriceLevelError::UnknownOrderType(ref s))
+            if s == "CUSTOM"
+        ));
+    }
+
+    #[test]
+    fn test_clone_price_level_error_checksum_mismatch() {
+        let price_level_err = PriceLevelError::ChecksumMismatch {
+            expected: "hash1".to_string(),
+            actual: "hash2".to_string(),
+        };
+        let error = OrderBookError::PriceLevelError(price_level_err);
+        let cloned = error.clone();
+        assert!(matches!(
+            cloned,
+            OrderBookError::PriceLevelError(PriceLevelError::ChecksumMismatch {
+                ref expected,
+                ref actual
+            }) if expected == "hash1" && actual == "hash2"
+        ));
+    }
+}
