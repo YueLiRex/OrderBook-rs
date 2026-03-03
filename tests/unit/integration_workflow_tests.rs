@@ -56,7 +56,7 @@ fn order_match_snapshot_restore_round_trip() {
 }
 
 #[test]
-fn snapshot_with_enriched_metrics_round_trip() {
+fn snapshot_enriched_metrics_validation() {
     let book = OrderBook::<()>::new("ETH/USD");
     let _ = book.add_limit_order(Id::new_uuid(), 3000, 100, Side::Buy, TimeInForce::Gtc, None);
     let _ = book.add_limit_order(Id::new_uuid(), 3010, 50, Side::Sell, TimeInForce::Gtc, None);
@@ -279,28 +279,25 @@ fn bincode_serializer_trade_result_round_trip() {
 // ─── BookManager with Trade Listener ────────────────────────────────────────
 
 #[test]
-fn book_manager_trade_event_flow() {
+fn book_manager_multi_book_operations() {
     let mut mgr: BookManagerStd<()> = BookManagerStd::new();
     mgr.add_book("BTC/USD");
 
     // Place a sell order
-    if let Some(book) = mgr.get_book("BTC/USD") {
-        let _ = book.add_limit_order(Id::new_uuid(), 100, 50, Side::Sell, TimeInForce::Gtc, None);
-    }
+    let book = mgr.get_book("BTC/USD").expect("BTC/USD book must exist");
+    let _ = book.add_limit_order(Id::new_uuid(), 100, 50, Side::Sell, TimeInForce::Gtc, None);
 
     // Place a buy market order that crosses
-    if let Some(book) = mgr.get_book("BTC/USD") {
-        let result = book.submit_market_order(Id::new_uuid(), 10, Side::Buy);
-        assert!(result.is_ok());
-    }
+    let book = mgr.get_book("BTC/USD").expect("BTC/USD book must exist");
+    let result = book.submit_market_order(Id::new_uuid(), 10, Side::Buy);
+    assert!(result.is_ok());
 
     // Verify book state after match
-    if let Some(book) = mgr.get_book("BTC/USD") {
-        let snap = book.create_snapshot(usize::MAX);
-        assert_eq!(snap.asks.len(), 1);
-        // Remaining ask quantity should be 40
-        assert_eq!(snap.asks[0].visible_quantity(), 40);
-    }
+    let book = mgr.get_book("BTC/USD").expect("BTC/USD book must exist");
+    let snap = book.create_snapshot(usize::MAX);
+    assert_eq!(snap.asks.len(), 1);
+    // Remaining ask quantity should be 40
+    assert_eq!(snap.asks[0].visible_quantity(), 40);
 }
 
 #[test]
@@ -309,12 +306,10 @@ fn book_manager_multi_book_independent_state() {
     mgr.add_book("BTC/USD");
     mgr.add_book("ETH/USD");
 
-    if let Some(book) = mgr.get_book("BTC/USD") {
-        let _ = book.add_limit_order(Id::new_uuid(), 50000, 1, Side::Buy, TimeInForce::Gtc, None);
-    }
-    if let Some(book) = mgr.get_book("ETH/USD") {
-        let _ = book.add_limit_order(Id::new_uuid(), 3000, 10, Side::Sell, TimeInForce::Gtc, None);
-    }
+    let btc_book = mgr.get_book("BTC/USD").expect("BTC/USD must exist");
+    let _ = btc_book.add_limit_order(Id::new_uuid(), 50000, 1, Side::Buy, TimeInForce::Gtc, None);
+    let eth_book = mgr.get_book("ETH/USD").expect("ETH/USD must exist");
+    let _ = eth_book.add_limit_order(Id::new_uuid(), 3000, 10, Side::Sell, TimeInForce::Gtc, None);
 
     // Each book should have independent state
     let btc_snap = mgr
