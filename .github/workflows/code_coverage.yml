@@ -1,16 +1,18 @@
-name: Code Coverage Report.
+name: Code Coverage Report
 
 on:
   push:
     branches:
       - main
-      - "feature/**"
-      - "fix/**"
       - "release/**"
   pull_request:
     branches:
       - main
       - "release/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,24 +22,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
           components: llvm-tools-preview
-          override: true
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y make libfontconfig1-dev pkg-config
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      # INSTALL TARPAULIN FOR CODE COVERAGE
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      - name: Install Tarpaulin.
-        run: cargo install cargo-tarpaulin
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      # GENERATE CODE COVERAGE REPORT
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      - name: Generate code coverage report.
+
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin --version 0.35.2 --locked
+
+      - name: Generate code coverage report
         run: |
           cargo tarpaulin \
             --engine llvm \
@@ -45,13 +46,10 @@ jobs:
             --workspace \
             --timeout 180 \
             --out Xml
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      # UPLOAD CODE COVERAGE REPORT TO CODECOV.IO
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
       - name: Upload coverage reports to Codecov.io
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

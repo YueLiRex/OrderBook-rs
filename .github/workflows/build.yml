@@ -3,11 +3,15 @@ name: Build
 on:
   push:
     branches:
-      - '**'
+      - "**"
   pull_request:
     branches:
       - main
-      - 'release/**'
+      - "release/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,32 +19,25 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
-    
+
     strategy:
       matrix:
         include:
           - os: ubuntu-22.04
           - os: ubuntu-latest
 
-
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
 
       - name: Install dependencies
         run: |
-          if [ "${{ matrix.container }}" = "archlinux:latest" ]; then
-            pacman -Syu --noconfirm make fontconfig pkgconf gcc
-          elif [ "${{ runner.os }}" = "Linux" ]; then
-            sudo apt-get update && sudo apt-get install -y make libfontconfig1-dev pkg-config build-essential
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            brew install make fontconfig pkg-config gcc
-          fi
+          sudo apt-get update && sudo apt-get install -y make libfontconfig1-dev pkg-config build-essential
 
       - name: Build
         run: make build
