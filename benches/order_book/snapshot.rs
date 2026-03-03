@@ -48,7 +48,10 @@ pub fn register_benchmarks(c: &mut Criterion) {
                     || snap.clone(),
                     |snapshot| {
                         let restored = OrderBook::<()>::new("BENCH");
-                        let _ = black_box(restored.restore_from_snapshot(snapshot));
+                        restored
+                            .restore_from_snapshot(snapshot)
+                            .expect("restore_from_snapshot must succeed in benchmark");
+                        black_box(());
                     },
                 );
             },

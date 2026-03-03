@@ -107,7 +107,9 @@ pub fn register_benchmarks(c: &mut Criterion) {
                     .expect("replay must succeed");
                 let expected = book.create_snapshot(usize::MAX);
                 b.iter(|| {
-                    let _ = black_box(ReplayEngine::<()>::verify(&journal, &expected));
+                    let result = ReplayEngine::<()>::verify(&journal, &expected);
+                    let ok = result.expect("replay verification must succeed");
+                    assert!(black_box(ok), "replay verification diverged");
                 });
             },
         );
