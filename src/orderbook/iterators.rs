@@ -5,8 +5,19 @@
 //! iterator combinators and can short-circuit early.
 
 use crossbeam_skiplist::SkipMap;
+use crossbeam_skiplist::map::Iter;
+use either::Either;
 use pricelevel::{PriceLevel, Side};
+use std::iter::Rev;
 use std::sync::Arc;
+
+/// Direction-erased iterator over price levels in a [`SkipMap`].
+///
+/// Wraps either a reverse (highest-to-lowest) or forward (lowest-to-highest) iterator:
+/// bids ([`Side::Buy`]) iterate in descending price order, while asks ([`Side::Sell`])
+/// iterate in ascending price order.
+type PriceLevelIter<'a> =
+    Either<Rev<Iter<'a, u128, Arc<PriceLevel>>>, Iter<'a, u128, Arc<PriceLevel>>>;
 
 /// Information about a price level including price, quantity, and cumulative depth
 #[derive(Debug, Clone)]
@@ -27,7 +38,7 @@ pub struct LevelInfo {
 /// maintaining cumulative depth as it goes. This is useful for analyzing
 /// market depth distribution and finding liquidity thresholds.
 pub struct LevelsWithCumulativeDepth<'a> {
-    iter: Box<dyn Iterator<Item = crossbeam_skiplist::map::Entry<'a, u128, Arc<PriceLevel>>> + 'a>,
+    iter: PriceLevelIter<'a>,
     cumulative_depth: u64,
 }
 
@@ -38,9 +49,9 @@ impl<'a> LevelsWithCumulativeDepth<'a> {
     /// - `price_levels`: Reference to the SkipMap of price levels
     /// - `side`: Side to iterate (Buy for bids, Sell for asks)
     pub fn new(price_levels: &'a SkipMap<u128, Arc<PriceLevel>>, side: Side) -> Self {
-        let iter: Box<dyn Iterator<Item = _> + 'a> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()), // Highest to lowest
-            Side::Sell => Box::new(price_levels.iter()),      // Lowest to highest
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()), // Highest to lowest
+            Side::Sell => Either::Right(price_levels.iter()),     // Lowest to highest
         };
 
         Self {
@@ -73,7 +84,7 @@ impl<'a> Iterator for LevelsWithCumulativeDepth<'a> {
 /// Stops automatically when the cumulative depth reaches or exceeds the target.
 /// Useful for analyzing how many levels are needed to fill a specific quantity.
 pub struct LevelsUntilDepth<'a> {
-    iter: Box<dyn Iterator<Item = crossbeam_skiplist::map::Entry<'a, u128, Arc<PriceLevel>>> + 'a>,
+    iter: PriceLevelIter<'a>,
     target_depth: u64,
     cumulative_depth: u64,
     finished: bool,
@@ -91,9 +102,9 @@ impl<'a> LevelsUntilDepth<'a> {
         side: Side,
         target_depth: u64,
     ) -> Self {
-        let iter: Box<dyn Iterator<Item = _> + 'a> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()),
-            Side::Sell => Box::new(price_levels.iter()),
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()),
+            Side::Sell => Either::Right(price_levels.iter()),
         };
 
         Self {
@@ -139,7 +150,7 @@ impl<'a> Iterator for LevelsUntilDepth<'a> {
 /// Only yields levels where the price falls within [min_price, max_price] inclusive.
 /// Useful for analyzing liquidity in specific price bands.
 pub struct LevelsInRange<'a> {
-    iter: Box<dyn Iterator<Item = crossbeam_skiplist::map::Entry<'a, u128, Arc<PriceLevel>>> + 'a>,
+    iter: PriceLevelIter<'a>,
     min_price: u128,
     max_price: u128,
     finished: bool,
@@ -159,9 +170,9 @@ impl<'a> LevelsInRange<'a> {
         min_price: u128,
         max_price: u128,
     ) -> Self {
-        let iter: Box<dyn Iterator<Item = _> + 'a> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()),
-            Side::Sell => Box::new(price_levels.iter()),
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()),
+            Side::Sell => Either::Right(price_levels.iter()),
         };
 
         Self {

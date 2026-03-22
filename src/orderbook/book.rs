@@ -16,6 +16,7 @@ use crate::utils::current_time_millis;
 use crossbeam::atomic::AtomicCell;
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
+use either::Either;
 #[cfg(feature = "special_orders")]
 use pricelevel::OrderUpdate;
 use pricelevel::{Hash32, Id, MatchResult, OrderType, PriceLevel, Side, UuidGenerator};
@@ -871,9 +872,9 @@ where
         let mut cumulative = 0u64;
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()), // Highest to lowest
-            Side::Sell => Box::new(price_levels.iter()),      // Lowest to highest
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()), // Highest to lowest
+            Side::Sell => Either::Right(price_levels.iter()),     // Lowest to highest
         };
 
         for entry in iter {
@@ -927,9 +928,9 @@ where
         let mut cumulative = 0u64;
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()), // Highest to lowest
-            Side::Sell => Box::new(price_levels.iter()),      // Lowest to highest
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()), // Highest to lowest
+            Side::Sell => Either::Right(price_levels.iter()),     // Lowest to highest
         };
 
         for entry in iter {
@@ -986,9 +987,9 @@ where
         let mut total = 0u64;
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()), // Highest to lowest
-            Side::Sell => Box::new(price_levels.iter()),      // Lowest to highest
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()), // Highest to lowest
+            Side::Sell => Either::Right(price_levels.iter()),     // Lowest to highest
         };
 
         for (count, entry) in iter.enumerate() {
@@ -1127,9 +1128,9 @@ where
         let mut total_filled = 0u64;
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter()), // Lowest to highest (asks)
-            Side::Sell => Box::new(price_levels.iter().rev()), // Highest to lowest (bids)
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter()), // Lowest to highest (asks)
+            Side::Sell => Either::Right(price_levels.iter().rev()), // Highest to lowest (bids)
         };
 
         for entry in iter {
@@ -1339,9 +1340,9 @@ where
         let mut levels_consumed = 0;
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter()), // Lowest to highest (asks)
-            Side::Sell => Box::new(price_levels.iter().rev()), // Highest to lowest (bids)
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter()), // Lowest to highest (asks)
+            Side::Sell => Either::Right(price_levels.iter().rev()), // Highest to lowest (bids)
         };
 
         for entry in iter {
@@ -1451,9 +1452,9 @@ where
         let mut fills = Vec::new();
 
         // Iterate in price-priority order
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter()), // Lowest to highest (asks)
-            Side::Sell => Box::new(price_levels.iter().rev()), // Highest to lowest (bids)
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter()), // Lowest to highest (asks)
+            Side::Sell => Either::Right(price_levels.iter().rev()), // Highest to lowest (bids)
         };
 
         for entry in iter {
@@ -1709,9 +1710,9 @@ where
         // For asks: iterate from lowest to highest (forward)
         let mut current_position = 1;
 
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()),
-            Side::Sell => Box::new(price_levels.iter()),
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()),
+            Side::Sell => Either::Right(price_levels.iter()),
         };
 
         for entry in iter {
@@ -1783,9 +1784,9 @@ where
 
         // For bids: iterate from highest to lowest (reverse)
         // For asks: iterate from lowest to highest (forward)
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()),
-            Side::Sell => Box::new(price_levels.iter()),
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()),
+            Side::Sell => Either::Right(price_levels.iter()),
         };
 
         for entry in iter {
@@ -2611,9 +2612,9 @@ where
             return DepthStats::zero();
         }
 
-        let iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter().rev()),
-            Side::Sell => Box::new(price_levels.iter()),
+        let iter = match side {
+            Side::Buy => Either::Left(price_levels.iter().rev()),
+            Side::Sell => Either::Right(price_levels.iter()),
         };
 
         let mut total_volume = 0u64;

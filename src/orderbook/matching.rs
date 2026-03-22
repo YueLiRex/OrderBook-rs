@@ -9,6 +9,7 @@ use crate::orderbook::order_state::{CancelReason, OrderStatus};
 use crate::orderbook::pool::MatchingPool;
 use crate::orderbook::stp::{STPAction, check_stp_at_level};
 use crate::{OrderBook, OrderBookError};
+use either::Either;
 use pricelevel::{Hash32, Id, MatchResult, OrderUpdate, Side};
 use std::sync::atomic::Ordering;
 
@@ -107,9 +108,9 @@ where
         // Iterate through prices in optimal order (already sorted by SkipMap)
         // For buy orders: iterate asks in ascending order (best ask first)
         // For sell orders: iterate bids in descending order (best bid first)
-        let price_iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(match_side.iter()),
-            Side::Sell => Box::new(match_side.iter().rev()),
+        let price_iter = match side {
+            Side::Buy => Either::Left(match_side.iter()),
+            Side::Sell => Either::Right(match_side.iter().rev()),
         };
 
         // Process each price level
@@ -405,9 +406,9 @@ where
         let mut matched_quantity = 0u64;
 
         // Iterate through prices in optimal order (already sorted by SkipMap)
-        let price_iter: Box<dyn Iterator<Item = _>> = match side {
-            Side::Buy => Box::new(price_levels.iter()),
-            Side::Sell => Box::new(price_levels.iter().rev()),
+        let price_iter = match side {
+            Side::Buy => Either::Left(price_levels.iter()),
+            Side::Sell => Either::Right(price_levels.iter().rev()),
         };
 
         // Process each price level
