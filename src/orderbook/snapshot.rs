@@ -258,7 +258,14 @@ impl OrderBookSnapshotPackage {
         hasher.update(payload);
 
         let checksum_bytes = hasher.finalize();
-        Ok(format!("{:x}", checksum_bytes))
+        let mut out = String::with_capacity(checksum_bytes.len() * 2);
+        for byte in checksum_bytes.iter() {
+            use std::fmt::Write;
+            write!(&mut out, "{byte:02x}").map_err(|error| OrderBookError::SerializationError {
+                message: error.to_string(),
+            })?;
+        }
+        Ok(out)
     }
 }
 

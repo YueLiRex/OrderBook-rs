@@ -32,7 +32,21 @@
 //! - **Research**: Platform for studying market microstructure and order flow
 //! - **Educational**: Reference implementation for understanding modern exchange architecture
 //!
-//! ## What's New in Version 0.6.1
+//! ## What's New in Version 0.6.2
+//!
+//! ### v0.6.2 — Dependency Bumps & Bincode 2.x Migration
+//!
+//! - **Dependency refresh**: `uuid` 1.23, `tokio` 1.52, `sha2` 0.11,
+//!   `async-nats` 0.47, `bincode` 2.0 (crates.io `bincode 3.0.0` is a
+//!   `compile_error!` stub, so `2.0` is the current usable major).
+//! - **Bincode API migration** (feature `bincode`): the
+//!   `BincodeEventSerializer` now uses `bincode::serde::encode_to_vec`
+//!   / `decode_from_slice` with `bincode::config::standard()`. The
+//!   public trait and type surface are unchanged.
+//! - **Wire-format note**: bincode 1.x and 2.x produce different byte
+//!   layouts on the NATS transport path. The on-disk journal uses
+//!   `serde_json` and is unaffected (`ORDERBOOK_SNAPSHOT_FORMAT_VERSION`
+//!   stays at `1`).
 //!
 //! ### v0.6.1 — NATS Integration, Sequencer & Order State
 //!

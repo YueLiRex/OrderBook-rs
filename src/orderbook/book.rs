@@ -1708,18 +1708,15 @@ where
 
         // For bids: iterate from highest to lowest (reverse)
         // For asks: iterate from lowest to highest (forward)
-        let mut current_position = 1;
-
         let iter = match side {
             Side::Buy => Either::Left(price_levels.iter().rev()),
             Side::Sell => Either::Right(price_levels.iter()),
         };
 
-        for entry in iter {
+        for (current_position, entry) in (1usize..).zip(iter) {
             if current_position == position {
                 return Some(*entry.key());
             }
-            current_position += 1;
         }
 
         None
