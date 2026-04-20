@@ -213,12 +213,13 @@ mod tests_sequencer_types {
             let cmd: SequencerCommand<()> = SequencerCommand::CancelAll;
             let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
+            let payload = bytes.unwrap_or_default();
             let decoded: Result<(SequencerCommand<()>, usize), _> =
-                bincode::serde::decode_from_slice(
-                    &bytes.unwrap_or_default(),
-                    bincode::config::standard(),
-                );
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
+            if let Ok((_, bytes_read)) = &decoded {
+                assert_eq!(*bytes_read, payload.len(), "trailing bytes in payload");
+            }
             assert!(matches!(
                 decoded
                     .map(|(cmd, _)| cmd)
@@ -232,12 +233,13 @@ mod tests_sequencer_types {
             let cmd: SequencerCommand<()> = SequencerCommand::CancelBySide { side: Side::Buy };
             let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
+            let payload = bytes.unwrap_or_default();
             let decoded: Result<(SequencerCommand<()>, usize), _> =
-                bincode::serde::decode_from_slice(
-                    &bytes.unwrap_or_default(),
-                    bincode::config::standard(),
-                );
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
+            if let Ok((_, bytes_read)) = decoded {
+                assert_eq!(bytes_read, payload.len(), "trailing bytes in payload");
+            }
         }
 
         #[test]
@@ -246,12 +248,13 @@ mod tests_sequencer_types {
             let cmd: SequencerCommand<()> = SequencerCommand::CancelByUser { user_id };
             let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
+            let payload = bytes.unwrap_or_default();
             let decoded: Result<(SequencerCommand<()>, usize), _> =
-                bincode::serde::decode_from_slice(
-                    &bytes.unwrap_or_default(),
-                    bincode::config::standard(),
-                );
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
+            if let Ok((_, bytes_read)) = decoded {
+                assert_eq!(bytes_read, payload.len(), "trailing bytes in payload");
+            }
         }
 
         #[test]
@@ -263,12 +266,13 @@ mod tests_sequencer_types {
             };
             let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
+            let payload = bytes.unwrap_or_default();
             let decoded: Result<(SequencerCommand<()>, usize), _> =
-                bincode::serde::decode_from_slice(
-                    &bytes.unwrap_or_default(),
-                    bincode::config::standard(),
-                );
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
+            if let Ok((_, bytes_read)) = decoded {
+                assert_eq!(bytes_read, payload.len(), "trailing bytes in payload");
+            }
         }
 
         #[test]
@@ -278,11 +282,13 @@ mod tests_sequencer_types {
             };
             let bytes = bincode::serde::encode_to_vec(&result, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<(SequencerResult, usize), _> = bincode::serde::decode_from_slice(
-                &bytes.unwrap_or_default(),
-                bincode::config::standard(),
-            );
+            let payload = bytes.unwrap_or_default();
+            let decoded: Result<(SequencerResult, usize), _> =
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
+            if let Ok((_, bytes_read)) = decoded {
+                assert_eq!(bytes_read, payload.len(), "trailing bytes in payload");
+            }
         }
 
         #[test]
@@ -296,12 +302,12 @@ mod tests_sequencer_types {
             );
             let bytes = bincode::serde::encode_to_vec(&event, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<(SequencerEvent<()>, usize), _> = bincode::serde::decode_from_slice(
-                &bytes.unwrap_or_default(),
-                bincode::config::standard(),
-            );
+            let payload = bytes.unwrap_or_default();
+            let decoded: Result<(SequencerEvent<()>, usize), _> =
+                bincode::serde::decode_from_slice(&payload, bincode::config::standard());
             assert!(decoded.is_ok());
-            if let Ok((evt, _)) = decoded {
+            if let Ok((evt, bytes_read)) = decoded {
+                assert_eq!(bytes_read, payload.len(), "trailing bytes in payload");
                 assert_eq!(evt.sequence_num, 10);
             }
         }

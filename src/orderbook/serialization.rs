@@ -210,25 +210,42 @@ impl EventSerializer for BincodeEventSerializer {
     }
 
     fn deserialize_trade(&self, data: &[u8]) -> Result<TradeResult, SerializationError> {
-        bincode::serde::decode_from_slice::<TradeResult, _>(data, bincode::config::standard())
-            .map(|(value, _)| value)
-            .map_err(|e| SerializationError {
-                message: e.to_string(),
-            })
+        let (value, bytes_read) =
+            bincode::serde::decode_from_slice::<TradeResult, _>(data, bincode::config::standard())
+                .map_err(|e| SerializationError {
+                    message: e.to_string(),
+                })?;
+        if bytes_read != data.len() {
+            return Err(SerializationError {
+                message: format!(
+                    "trailing bytes after trade payload: consumed {bytes_read} of {}",
+                    data.len()
+                ),
+            });
+        }
+        Ok(value)
     }
 
     fn deserialize_book_change(
         &self,
         data: &[u8],
     ) -> Result<PriceLevelChangedEvent, SerializationError> {
-        bincode::serde::decode_from_slice::<PriceLevelChangedEvent, _>(
+        let (value, bytes_read) = bincode::serde::decode_from_slice::<PriceLevelChangedEvent, _>(
             data,
             bincode::config::standard(),
         )
-        .map(|(value, _)| value)
         .map_err(|e| SerializationError {
             message: e.to_string(),
-        })
+        })?;
+        if bytes_read != data.len() {
+            return Err(SerializationError {
+                message: format!(
+                    "trailing bytes after book-change payload: consumed {bytes_read} of {}",
+                    data.len()
+                ),
+            });
+        }
+        Ok(value)
     }
 
     #[inline]
