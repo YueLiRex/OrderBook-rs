@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] — 2026-04-20
+
+### Changed
+
+- **Dependencies**: Bump workspace dependencies to latest stable
+  versions — `uuid` → `1.23`, `tokio` → `1.52`, `sha2` → `0.11`,
+  `async-nats` → `0.47`, and `bincode` → `2.0` (the crates.io `3.0.0`
+  release is a `compile_error!` stub, so `2.0` is the current usable
+  major).
+- **`bincode` migration (feature `bincode`)**: migrated the
+  `BincodeEventSerializer` and the bincode-gated sequencer tests from
+  the legacy `bincode::serialize` / `bincode::deserialize` API to the
+  serde bridge in `bincode 2.x`
+  (`bincode::serde::encode_to_vec` / `bincode::serde::decode_from_slice`
+  with `bincode::config::standard()`). The public
+  `EventSerializer` trait and the `BincodeEventSerializer` type are
+  unchanged.
+- **`sha2` 0.11 compat**: the finalized `Digest` output type no
+  longer implements `LowerHex` directly, so
+  `OrderBookSnapshotPackage::compute_checksum` now formats the hash
+  bytes explicitly.
+
+### Notes
+
+- **Wire-format change (bincode NATS payloads)**: bincode 1.x and
+  bincode 2.x produce different byte layouts. Consumers that decoded
+  NATS payloads with an older `BincodeEventSerializer` build must
+  upgrade to the new version. The on-disk journal is unaffected — it
+  uses `serde_json`, not bincode. `ORDERBOOK_SNAPSHOT_FORMAT_VERSION`
+  stays at `1`.
+- No public API changes — `0.6.2` is a compatible minor release.
+
 ## [0.6.1] — 2026-03-22
 
 ### Changed

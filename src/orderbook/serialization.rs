@@ -191,8 +191,10 @@ impl BincodeEventSerializer {
 #[cfg(feature = "bincode")]
 impl EventSerializer for BincodeEventSerializer {
     fn serialize_trade(&self, trade: &TradeResult) -> Result<Vec<u8>, SerializationError> {
-        bincode::serialize(trade).map_err(|e| SerializationError {
-            message: e.to_string(),
+        bincode::serde::encode_to_vec(trade, bincode::config::standard()).map_err(|e| {
+            SerializationError {
+                message: e.to_string(),
+            }
         })
     }
 
@@ -200,22 +202,31 @@ impl EventSerializer for BincodeEventSerializer {
         &self,
         event: &PriceLevelChangedEvent,
     ) -> Result<Vec<u8>, SerializationError> {
-        bincode::serialize(event).map_err(|e| SerializationError {
-            message: e.to_string(),
+        bincode::serde::encode_to_vec(event, bincode::config::standard()).map_err(|e| {
+            SerializationError {
+                message: e.to_string(),
+            }
         })
     }
 
     fn deserialize_trade(&self, data: &[u8]) -> Result<TradeResult, SerializationError> {
-        bincode::deserialize(data).map_err(|e| SerializationError {
-            message: e.to_string(),
-        })
+        bincode::serde::decode_from_slice::<TradeResult, _>(data, bincode::config::standard())
+            .map(|(value, _)| value)
+            .map_err(|e| SerializationError {
+                message: e.to_string(),
+            })
     }
 
     fn deserialize_book_change(
         &self,
         data: &[u8],
     ) -> Result<PriceLevelChangedEvent, SerializationError> {
-        bincode::deserialize(data).map_err(|e| SerializationError {
+        bincode::serde::decode_from_slice::<PriceLevelChangedEvent, _>(
+            data,
+            bincode::config::standard(),
+        )
+        .map(|(value, _)| value)
+        .map_err(|e| SerializationError {
             message: e.to_string(),
         })
     }

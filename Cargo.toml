@@ -1,6 +1,6 @@
 [package]
 name = "orderbook-rs"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 authors = ["Joaquin Bejar <jb@taunais.com>"]
 description = "A high-performance, lock-free price level implementation for limit order books in Rust. This library provides the building blocks for creating efficient trading systems with support for multiple order types and concurrent access patterns."
@@ -58,7 +58,7 @@ journal = ["dep:crc32fast", "dep:memmap2"]
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-tokio = { version = "1.49", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }
 tempfile = "3"
 
 [[bench]]
@@ -85,20 +85,20 @@ members = [
 orderbook-rs = { path = "." }
 pricelevel = "0.7"
 tracing = "0.1"
-uuid = { version = "1.21", features = ["v4", "v5", "serde"] }
+uuid = { version = "1.23", features = ["v4", "v5", "serde"] }
 dashmap = "6.1"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-sha2 = "0.10"
-tokio = { version = "1.49", features = ["sync", "rt", "time"] }
+sha2 = "0.11"
+tokio = { version = "1.52", features = ["sync", "rt", "time"] }
 crossbeam-skiplist = "0.1"
 crossbeam = "0.8"
 bitflags = { version = "2.11", features = ["serde"] }
 thiserror = "2"
 either = "1.15"
 tracing-subscriber = "0.3"
-async-nats = "0.46"
+async-nats = "0.47"
 bytes = "1"
-bincode = "1"
+bincode = { version = "2.0", features = ["serde"] }
 crc32fast = "1"
 memmap2 = "0.9"

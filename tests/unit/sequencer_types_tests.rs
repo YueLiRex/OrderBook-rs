@@ -211,13 +211,18 @@ mod tests_sequencer_types {
         #[test]
         fn bincode_roundtrip_cancel_all() {
             let cmd: SequencerCommand<()> = SequencerCommand::CancelAll;
-            let bytes = bincode::serialize(&cmd);
+            let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerCommand<()>, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerCommand<()>, usize), _> =
+                bincode::serde::decode_from_slice(
+                    &bytes.unwrap_or_default(),
+                    bincode::config::standard(),
+                );
             assert!(decoded.is_ok());
             assert!(matches!(
-                decoded.unwrap_or(SequencerCommand::CancelAll),
+                decoded
+                    .map(|(cmd, _)| cmd)
+                    .unwrap_or(SequencerCommand::CancelAll),
                 SequencerCommand::CancelAll
             ));
         }
@@ -225,10 +230,13 @@ mod tests_sequencer_types {
         #[test]
         fn bincode_roundtrip_cancel_by_side() {
             let cmd: SequencerCommand<()> = SequencerCommand::CancelBySide { side: Side::Buy };
-            let bytes = bincode::serialize(&cmd);
+            let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerCommand<()>, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerCommand<()>, usize), _> =
+                bincode::serde::decode_from_slice(
+                    &bytes.unwrap_or_default(),
+                    bincode::config::standard(),
+                );
             assert!(decoded.is_ok());
         }
 
@@ -236,10 +244,13 @@ mod tests_sequencer_types {
         fn bincode_roundtrip_cancel_by_user() {
             let user_id = Hash32::from([99u8; 32]);
             let cmd: SequencerCommand<()> = SequencerCommand::CancelByUser { user_id };
-            let bytes = bincode::serialize(&cmd);
+            let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerCommand<()>, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerCommand<()>, usize), _> =
+                bincode::serde::decode_from_slice(
+                    &bytes.unwrap_or_default(),
+                    bincode::config::standard(),
+                );
             assert!(decoded.is_ok());
         }
 
@@ -250,10 +261,13 @@ mod tests_sequencer_types {
                 min_price: 50,
                 max_price: 150,
             };
-            let bytes = bincode::serialize(&cmd);
+            let bytes = bincode::serde::encode_to_vec(&cmd, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerCommand<()>, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerCommand<()>, usize), _> =
+                bincode::serde::decode_from_slice(
+                    &bytes.unwrap_or_default(),
+                    bincode::config::standard(),
+                );
             assert!(decoded.is_ok());
         }
 
@@ -262,10 +276,12 @@ mod tests_sequencer_types {
             let result = SequencerResult::MassCancelled {
                 result: MassCancelResult::default(),
             };
-            let bytes = bincode::serialize(&result);
+            let bytes = bincode::serde::encode_to_vec(&result, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerResult, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerResult, usize), _> = bincode::serde::decode_from_slice(
+                &bytes.unwrap_or_default(),
+                bincode::config::standard(),
+            );
             assert!(decoded.is_ok());
         }
 
@@ -278,12 +294,14 @@ mod tests_sequencer_types {
                     result: MassCancelResult::default(),
                 },
             );
-            let bytes = bincode::serialize(&event);
+            let bytes = bincode::serde::encode_to_vec(&event, bincode::config::standard());
             assert!(bytes.is_ok());
-            let decoded: Result<SequencerEvent<()>, _> =
-                bincode::deserialize(&bytes.unwrap_or_default());
+            let decoded: Result<(SequencerEvent<()>, usize), _> = bincode::serde::decode_from_slice(
+                &bytes.unwrap_or_default(),
+                bincode::config::standard(),
+            );
             assert!(decoded.is_ok());
-            if let Ok(evt) = decoded {
+            if let Ok((evt, _)) = decoded {
                 assert_eq!(evt.sequence_num, 10);
             }
         }
