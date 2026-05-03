@@ -1,6 +1,6 @@
 [package]
 name = "orderbook-rs"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 authors = ["Joaquin Bejar <jb@taunais.com>"]
 description = "A high-performance, lock-free price level implementation for limit order books in Rust. This library provides the building blocks for creating efficient trading systems with support for multiple order types and concurrent access patterns."
@@ -86,6 +86,11 @@ harness = false
 [[bench]]
 name = "aggressive_walk_hdr"
 path = "benches/order_book/aggressive_walk_hdr.rs"
+harness = false
+
+[[bench]]
+name = "notional_walk_hdr"
+path = "benches/order_book/notional_walk_hdr.rs"
 harness = false
 
 [[bench]]
