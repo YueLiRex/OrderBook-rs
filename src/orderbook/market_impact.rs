@@ -137,10 +137,12 @@ impl OrderSimulation {
     /// The total cost (price × quantity summed across all fills)
     #[must_use]
     pub fn total_cost(&self) -> u128 {
-        self.fills
-            .iter()
-            .map(|(price, qty)| *price * (*qty as u128))
-            .sum()
+        // Saturating fold (matching the simulate path) so an extreme
+        // price × quantity product or running total caps at u128::MAX rather
+        // than panicking in debug / wrapping in release.
+        self.fills.iter().fold(0u128, |acc, (price, qty)| {
+            acc.saturating_add(price.saturating_mul(u128::from(*qty)))
+        })
     }
 }
 
@@ -154,6 +156,30 @@ mod tests {
         assert_eq!(impact.avg_price, 0.0);
         assert_eq!(impact.worst_price, 0);
         assert_eq!(impact.levels_consumed, 0);
+    }
+
+    #[test]
+    fn test_total_cost_saturates_on_extreme_fills() {
+        // A price × quantity product and running total beyond u128::MAX must
+        // saturate, not panic in debug / wrap in release.
+        let sim = OrderSimulation {
+            fills: vec![(u128::MAX, 2), (u128::MAX, 3)],
+            avg_price: 0.0,
+            total_filled: 5,
+            remaining_quantity: 0,
+        };
+        assert_eq!(sim.total_cost(), u128::MAX);
+    }
+
+    #[test]
+    fn test_total_cost_unchanged_for_realistic_fills() {
+        let sim = OrderSimulation {
+            fills: vec![(100, 5), (101, 3)],
+            avg_price: 0.0,
+            total_filled: 8,
+            remaining_quantity: 0,
+        };
+        assert_eq!(sim.total_cost(), 100 * 5 + 101 * 3);
     }
 
     #[test]

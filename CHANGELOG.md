@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Boundary arithmetic in fee/analytics math is overflow-safe (#114).** Several
+  monetary/price sites used unguarded casts or sums that wrap/panic on extreme
+  inputs. `FeeSchedule::calculate_fee` cast `notional: u128` to `i128` with a bare
+  `as` before the multiply, so a `notional > i128::MAX` truncated to a negative
+  value and silently produced a wrong-sign/magnitude fee into a journaled
+  `TradeResult`; it now computes the magnitude in the u128 domain (saturating) and
+  applies the sign afterward, with an accurate doc comment. `resolve_reference_price(Mid)`
+  and `DistributionBin::midpoint` use `u128::midpoint` instead of `(a + b) / 2`;
+  `EnrichedSnapshot::calculate_imbalance` folds volumes with `saturating_add`; and
+  `OrderSimulation::total_cost` folds with `saturating_mul`/`saturating_add`. Behavior
+  is unchanged for all realistic inputs; each site gained a boundary-value test.
 - **Price-band risk check cross-multiplies to stop sub-bps under-enforcement (#113).**
   `check_limit_admission` computed the deviation via truncating integer division
   (`diff * 10_000 / reference`) and rejected only when the floored bps exceeded the

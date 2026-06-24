@@ -80,7 +80,9 @@ impl DistributionBin {
     /// Returns the midpoint price of this bin
     #[must_use]
     pub fn midpoint(&self) -> u128 {
-        (self.min_price + self.max_price) / 2
+        // `midpoint` computes (min + max) / 2 without the intermediate
+        // `min + max` overflowing u128 at extreme prices.
+        self.min_price.midpoint(self.max_price)
     }
 
     /// Returns the width of this bin in price units
@@ -130,5 +132,17 @@ mod tests {
 
         assert_eq!(bin.midpoint(), 150);
         assert_eq!(bin.width(), 100);
+    }
+
+    #[test]
+    fn test_distribution_bin_midpoint_extreme_prices_do_not_overflow() {
+        // min + max would overflow u128; midpoint must not panic/wrap.
+        let bin = DistributionBin {
+            min_price: u128::MAX - 4,
+            max_price: u128::MAX,
+            volume: 1,
+            level_count: 1,
+        };
+        assert_eq!(bin.midpoint(), u128::MAX - 2);
     }
 }

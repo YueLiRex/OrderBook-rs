@@ -602,24 +602,69 @@ impl EnrichedSnapshot {
         asks: &[PriceLevelSnapshot],
         max_levels: usize,
     ) -> f64 {
+        // Saturating folds so an astronomical aggregate depth caps at u64::MAX
+        // rather than panicking in debug / wrapping in release.
         let bid_volume: u64 = bids
             .iter()
             .take(max_levels)
             .map(|l| l.total_quantity().map_or(0, |q| q.as_u64()))
-            .sum();
+            .fold(0u64, u64::saturating_add);
 
         let ask_volume: u64 = asks
             .iter()
             .take(max_levels)
             .map(|l| l.total_quantity().map_or(0, |q| q.as_u64()))
-            .sum();
+            .fold(0u64, u64::saturating_add);
 
-        let total = bid_volume + ask_volume;
+        let total = bid_volume.saturating_add(ask_volume);
 
         if total == 0 {
             0.0
         } else {
             (bid_volume as f64 - ask_volume as f64) / total as f64
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pricelevel::PriceLevelSnapshot;
+
+    fn level(visible: u64) -> PriceLevelSnapshot {
+        serde_json::from_value(serde_json::json!({
+            "price": 100,
+            "visible_quantity": visible,
+            "hidden_quantity": 0,
+            "order_count": 1,
+            "orders": []
+        }))
+        .expect("valid PriceLevelSnapshot JSON")
+    }
+
+    #[test]
+    fn test_calculate_imbalance_saturates_on_extreme_volume() {
+        // Two levels whose volumes overflow u64 must saturate, not panic in
+        // debug / wrap in release.
+        let big = u64::MAX / 2 + 1;
+        let bids = vec![level(big), level(big)];
+        let asks = vec![level(1)];
+        let imbalance = EnrichedSnapshot::calculate_imbalance(&bids, &asks, 10);
+        assert!(imbalance.is_finite(), "imbalance must be finite");
+        assert!(
+            (-1.0..=1.0).contains(&imbalance),
+            "imbalance must stay in [-1, 1], got {imbalance}"
+        );
+    }
+
+    #[test]
+    fn test_calculate_imbalance_realistic() {
+        let bids = vec![level(60)];
+        let asks = vec![level(40)];
+        let imbalance = EnrichedSnapshot::calculate_imbalance(&bids, &asks, 10);
+        assert!(
+            (imbalance - 0.2).abs() < 1e-9,
+            "(60 - 40) / 100 = 0.2, got {imbalance}"
+        );
     }
 }

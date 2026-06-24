@@ -98,13 +98,17 @@ impl FeeSchedule {
         } else {
             self.taker_fee_bps
         };
-        // Use checked arithmetic to prevent overflow
-        // notional can be up to u128::MAX, bps is typically small (-10000 to 10000)
-        // Result fits in i128 since we divide by 10_000
-        (notional as i128)
-            .checked_mul(bps as i128)
-            .map(|product| product / 10_000)
-            .unwrap_or(i128::MAX) // Fallback for overflow (shouldn't happen with reasonable inputs)
+        // Compute the magnitude in the u128 domain: notional * |bps| / 10_000.
+        // Doing this as u128 (not i128) avoids truncating a notional above
+        // i128::MAX into a negative value — which would have silently produced a
+        // wrong-sign / wrong-magnitude fee flowing into a journaled TradeResult.
+        // `saturating_mul` caps the (astronomically unlikely) product overflow at
+        // u128::MAX; after the `/ 10_000` the magnitude always fits in i128, so the
+        // `try_from` fallback never trips for realistic inputs. The sign is applied
+        // afterward so a maker rebate (negative bps) is preserved.
+        let magnitude_u128 = notional.saturating_mul(u128::from(bps.unsigned_abs())) / 10_000;
+        let magnitude = i128::try_from(magnitude_u128).unwrap_or(i128::MAX);
+        if bps < 0 { -magnitude } else { magnitude }
     }
 
     /// Check if this fee schedule provides maker rebates
@@ -227,6 +231,41 @@ mod tests {
         // -2 bps of $1,000 = -$0.20 = -20 cents
         let rebate = schedule.calculate_fee(notional, true);
         assert_eq!(rebate, -20_000); // -20,000 cents = -$200
+    }
+
+    #[test]
+    fn test_calculate_fee_notional_above_i128_max_keeps_sign_and_magnitude() {
+        // A notional above i128::MAX previously cast to a negative i128, so a
+        // taker fee came out negative (wrong sign) and a maker rebate positive.
+        // Compute the magnitude in the u128 domain so the sign stays correct.
+        let notional = u128::MAX; // far above i128::MAX
+        let taker = FeeSchedule::new(0, 5);
+        let taker_fee = taker.calculate_fee(notional, false);
+        assert!(
+            taker_fee > 0,
+            "taker fee must stay positive, got {taker_fee}"
+        );
+        // Magnitude is u128::MAX * 5 / 10_000 (saturating mul caps at u128::MAX,
+        // which still fits i128 after the divide).
+        let expected = i128::try_from(u128::MAX.saturating_mul(5) / 10_000).unwrap_or(i128::MAX);
+        assert_eq!(taker_fee, expected);
+
+        let maker = FeeSchedule::new(-2, 5);
+        let rebate = maker.calculate_fee(notional, true);
+        assert!(rebate < 0, "maker rebate must stay negative, got {rebate}");
+    }
+
+    #[test]
+    fn test_calculate_fee_unchanged_for_realistic_inputs() {
+        // The u128-domain computation must match the old behaviour for normal
+        // notionals (both taker fee and maker rebate, including truncation).
+        let schedule = FeeSchedule::new(-2, 5);
+        assert_eq!(schedule.calculate_fee(100_000_000, false), 50_000);
+        assert_eq!(schedule.calculate_fee(100_000_000, true), -20_000);
+        // Non-multiple-of-10_000 notional: floor(15_003 * 5 / 10_000) = 7.
+        assert_eq!(schedule.calculate_fee(15_003, false), 7);
+        // Maker rebate truncates toward zero just like the old i128 path.
+        assert_eq!(schedule.calculate_fee(15_003, true), -3);
     }
 
     #[test]
