@@ -10,8 +10,31 @@ use crate::orderbook::pool::MatchingPool;
 use crate::orderbook::stp::{STPAction, check_stp_at_level};
 use crate::{OrderBook, OrderBookError};
 use either::Either;
-use pricelevel::{Hash32, Id, MatchResult, Quantity, Side, TakerKind, TimeInForce};
+use pricelevel::{Hash32, Id, MatchResult, OrderType, Quantity, Side, TakerKind, TimeInForce};
 use std::sync::atomic::Ordering;
+
+/// Matchable depth of a single resting order: its visible quantity plus any
+/// hidden quantity the sweep can actually draw. An iceberg always replenishes
+/// its hidden tranche; a reserve only when `auto_replenish` is set — a
+/// non-auto-replenish reserve drops its hidden unfilled, so that hidden is NOT
+/// reachable depth. Used by FOK feasibility (#96) so undrawable hidden is never
+/// counted as fillable.
+#[inline]
+fn order_matchable_qty(order: &OrderType<()>) -> u64 {
+    let visible = order.visible_quantity().as_u64();
+    let drawable_hidden = match order {
+        OrderType::IcebergOrder {
+            hidden_quantity, ..
+        } => hidden_quantity.as_u64(),
+        OrderType::ReserveOrder {
+            hidden_quantity,
+            auto_replenish,
+            ..
+        } if *auto_replenish => hidden_quantity.as_u64(),
+        _ => 0,
+    };
+    visible.saturating_add(drawable_hidden)
+}
 
 /// Selects how the matching loop measures its budget.
 ///
@@ -787,6 +810,112 @@ where
         }
 
         matched_quantity
+    }
+
+    /// Faithful fill-or-kill feasibility: the quantity an immediate match of
+    /// `quantity` would *actually* fill, mirroring the real walk in
+    /// [`Self::match_order_inner`] — `lot_size` budget rounding, self-trade
+    /// prevention, and per-order *drawable* depth (a non-auto-replenish reserve's
+    /// hidden tranche is dropped unfilled by the sweep, so it is not counted).
+    ///
+    /// [`Self::peek_match`] only sums raw level depth, so it over-reports when STP
+    /// would cancel makers / the taker, or when a non-replenish reserve's hidden is
+    /// present. Routing FOK admission through this keeps fill-or-kill
+    /// all-or-nothing: an order that cannot be fully filled is killed *before* any
+    /// trade is emitted (#96).
+    pub(crate) fn fok_fillable_quantity(
+        &self,
+        side: Side,
+        quantity: u64,
+        price_limit: Option<u128>,
+        taker_user_id: Hash32,
+    ) -> u64 {
+        let price_levels = match side {
+            Side::Buy => &self.asks,
+            Side::Sell => &self.bids,
+        };
+        if quantity == 0 || price_levels.is_empty() {
+            return 0;
+        }
+
+        let lot = self.lot_size.unwrap_or(1);
+        let stp_active = self.stp_mode.is_enabled() && taker_user_id != Hash32::zero();
+
+        let price_iter = match side {
+            Side::Buy => Either::Left(price_levels.iter()),
+            Side::Sell => Either::Right(price_levels.iter().rev()),
+        };
+
+        let mut matched = 0u64;
+        for entry in price_iter {
+            if matched >= quantity {
+                break;
+            }
+
+            let price = *entry.key();
+            if let Some(limit) = price_limit {
+                match side {
+                    Side::Buy if price > limit => break,
+                    Side::Sell if price < limit => break,
+                    _ => {}
+                }
+            }
+
+            // Lot-round the remaining budget exactly like `StopCondition::level_qty_cap`:
+            // a budget below one full lot is dust and stops the walk.
+            let needed = quantity - matched;
+            let cap = if lot <= 1 {
+                needed
+            } else {
+                needed - (needed % lot)
+            };
+            if cap == 0 {
+                break;
+            }
+
+            let price_level = entry.value();
+
+            // Reachable depth at this level — the quantity the real sweep could
+            // actually fill — using per-order *matchable* depth (visible + drawable
+            // hidden), not the level's raw total, so a non-auto-replenish reserve's
+            // undrawable hidden tranche is not counted (#96).
+            let (reachable, stop_after) = if stp_active {
+                let orders = price_level.snapshot_orders();
+                match check_stp_at_level(&orders, taker_user_id, self.stp_mode) {
+                    STPAction::NoConflict => {
+                        (orders.iter().map(|o| order_matchable_qty(o)).sum(), false)
+                    }
+                    // Same-user makers are cancelled, not filled: only non-self
+                    // resting depth is reachable; the walk continues.
+                    STPAction::CancelMaker { .. } => {
+                        let non_self: u64 = orders
+                            .iter()
+                            .filter(|o| o.user_id() != taker_user_id)
+                            .map(|o| order_matchable_qty(o))
+                            .sum();
+                        (non_self, false)
+                    }
+                    // The taker is cancelled at the first same-user order: it can
+                    // fill at most `safe_quantity` (visible-only, matching the real
+                    // sweep's cap) here, then stops.
+                    STPAction::CancelTaker { safe_quantity }
+                    | STPAction::CancelBoth { safe_quantity, .. } => (safe_quantity, true),
+                }
+            } else {
+                let reachable = price_level
+                    .iter_orders()
+                    .map(|o| order_matchable_qty(&o))
+                    .sum();
+                (reachable, false)
+            };
+
+            matched = matched.saturating_add(cap.min(reachable));
+            if stop_after {
+                break;
+            }
+        }
+
+        matched
     }
 
     /// Batch operation for multiple order matches (additional optimization)
