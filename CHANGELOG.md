@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Price-band risk check cross-multiplies to stop sub-bps under-enforcement (#113).**
+  `check_limit_admission` computed the deviation via truncating integer division
+  (`diff * 10_000 / reference`) and rejected only when the floored bps exceeded the
+  limit, so an order whose true deviation was fractionally above the band rounded
+  down to the limit and slipped through (e.g. reference 30000, limit 100 bps, price
+  30301 = 100.33 bps was admitted). The check now cross-multiplies — rejects when
+  `diff * 10_000 > bps_limit * reference` — so the band never under-enforces, while
+  an order exactly at the limit is still admitted (strict-`>` boundary preserved).
+  The floored bps is recomputed only for the error-payload display.
 - **IV solver guards NaN/Inf inputs and crossed/locked books (#112).** The
   Black-Scholes IV solver only checked sign/magnitude — all `false` for NaN — so
   a NaN/Inf `spot`/`strike`/`time`/`rate`/`market_price` passed validation and

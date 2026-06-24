@@ -290,18 +290,26 @@ impl RiskState {
 
         // 3. Price band against a reference price.
         if let (Some(bps_limit), Some(reference)) = (cfg.price_band_bps, reference_price) {
-            // Compute deviation in basis points: |submitted - reference| / reference * 10_000.
-            // Use u128 arithmetic to avoid overflow; saturate at u32::MAX.
+            // Deviation in basis points is |submitted - reference| / reference * 10_000.
+            // Cross-multiply instead of dividing so the band never under-enforces:
+            // truncating integer division floors the bps, letting an order whose
+            // true deviation is fractionally above the band round down to the limit
+            // and slip through. Reject when diff*10_000 > bps_limit*reference, i.e.
+            // the true deviation *strictly* exceeds the band. An order exactly at the
+            // limit (diff*10_000 == bps_limit*reference) is admitted, preserving the
+            // original strict-`>` boundary semantics. u128 throughout with saturation.
             if reference > 0 {
                 let diff = price.abs_diff(reference);
-                // bps = diff * 10_000 / reference
-                let bps_u128 = diff.saturating_mul(10_000) / reference;
-                let deviation_bps = if bps_u128 > u128::from(u32::MAX) {
-                    u32::MAX
-                } else {
-                    bps_u128 as u32
-                };
-                if deviation_bps > bps_limit {
+                let scaled_diff = diff.saturating_mul(10_000);
+                let band = u128::from(bps_limit).saturating_mul(reference);
+                if scaled_diff > band {
+                    // Recompute the floored bps only for the error payload display.
+                    let bps_u128 = scaled_diff / reference;
+                    let deviation_bps = if bps_u128 > u128::from(u32::MAX) {
+                        u32::MAX
+                    } else {
+                        bps_u128 as u32
+                    };
                     return Err(OrderBookError::RiskPriceBand {
                         submitted: price,
                         reference,
@@ -695,6 +703,46 @@ mod tests {
             }
             other => panic!("expected RiskPriceBand, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_check_limit_admission_price_band_fractional_bps_is_rejected() {
+        let mut state = RiskState::new();
+        state.set_config(
+            RiskConfig::new().with_price_band_bps(100, ReferencePriceSource::LastTrade),
+        );
+        let acct = account(11);
+
+        // Reference 30_000, limit 100 bps → the band edge is exactly 30_300
+        // (100 bps = 300 ticks). 30_301 is 100.33 bps: truncating division
+        // floored this to 100 and admitted it; cross-multiplication rejects it.
+        match state.check_limit_admission(acct, 30_301, 1, Some(30_000)) {
+            Err(OrderBookError::RiskPriceBand {
+                deviation_bps,
+                limit_bps,
+                ..
+            }) => {
+                assert_eq!(limit_bps, 100);
+                assert_eq!(deviation_bps, 100, "display still shows the floored bps");
+            }
+            other => panic!("fractional over-band order must be rejected, got {other:?}"),
+        }
+
+        // An order exactly at the band edge (30_300 = 100.0 bps) is admitted —
+        // the strict-`>` boundary semantics are preserved.
+        assert!(
+            state
+                .check_limit_admission(acct, 30_300, 1, Some(30_000))
+                .is_ok(),
+            "exact-limit order must still be admitted"
+        );
+
+        // And just inside the band (30_299) is admitted.
+        assert!(
+            state
+                .check_limit_admission(acct, 30_299, 1, Some(30_000))
+                .is_ok()
+        );
     }
 
     #[test]
