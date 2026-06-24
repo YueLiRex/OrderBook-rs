@@ -101,6 +101,9 @@ impl TryFrom<&NewOrderWire> for OrderType<()> {
     /// Returns [`WireError::InvalidPayload`] when the wire message is malformed:
     /// - non-zero reserved padding (`_pad`),
     /// - a negative `price`,
+    /// - `price == 0` (the cache "no best price" sentinel; only `price > 0`
+    ///   is admissible),
+    /// - `qty == 0` (a zero-quantity order is structurally meaningless),
     /// - `account_id == 0` (reserved — it would collide with the
     ///   `Hash32::zero()` "no STP" sentinel),
     /// - an unknown `side` byte (not `SIDE_BUY` / `SIDE_SELL`),
@@ -127,6 +130,19 @@ impl TryFrom<&NewOrderWire> for OrderType<()> {
         }
         if price_raw < 0 {
             return Err(WireError::InvalidPayload("NewOrder: negative price"));
+        }
+        // Reject `price == 0` at the trust boundary: price 0 is the cache's
+        // "no best price" sentinel and a zero-priced limit order is
+        // structurally meaningless. Only `price > 0` is admissible.
+        if price_raw == 0 {
+            return Err(WireError::InvalidPayload("NewOrder: zero price"));
+        }
+        // Reject `qty == 0`: a zero-quantity order is structurally meaningless
+        // and otherwise slips through (the lot check passes for 0 and
+        // `min_order_size` defaults to `None`), reaching the insert/match path
+        // as a degenerate order. Reject it close to the source.
+        if qty == 0 {
+            return Err(WireError::InvalidPayload("NewOrder: zero quantity"));
         }
         // `account_id == 0` is reserved: it encodes to an all-zero `Hash32`,
         // which equals `Hash32::zero()` — the "no STP" sentinel — so an order
@@ -312,6 +328,50 @@ mod tests {
             pricelevel::Hash32::zero(),
             "a valid account must never produce the no-STP sentinel"
         );
+    }
+
+    #[test]
+    fn try_from_rejects_zero_quantity_issue_125() {
+        // A zero-quantity order is structurally meaningless and otherwise slips
+        // past the default-config lot / min-size checks. Reject it precisely.
+        let wire = NewOrderWire {
+            client_ts: 0,
+            order_id: 1,
+            account_id: 2,
+            price: 100,
+            qty: 0,
+            side: SIDE_BUY,
+            time_in_force: TIF_GTC,
+            order_type: ORDER_TYPE_STANDARD,
+            _pad: [0u8; 5],
+        };
+        let res: Result<OrderType<()>, _> = (&wire).try_into();
+        assert!(matches!(
+            res,
+            Err(WireError::InvalidPayload("NewOrder: zero quantity"))
+        ));
+    }
+
+    #[test]
+    fn try_from_rejects_zero_price_issue_125() {
+        // price 0 is the cache "no best price" sentinel; only price > 0 is
+        // admissible at the wire boundary.
+        let wire = NewOrderWire {
+            client_ts: 0,
+            order_id: 1,
+            account_id: 2,
+            price: 0,
+            qty: 5,
+            side: SIDE_BUY,
+            time_in_force: TIF_GTC,
+            order_type: ORDER_TYPE_STANDARD,
+            _pad: [0u8; 5],
+        };
+        let res: Result<OrderType<()>, _> = (&wire).try_into();
+        assert!(matches!(
+            res,
+            Err(WireError::InvalidPayload("NewOrder: zero price"))
+        ));
     }
 
     #[test]
