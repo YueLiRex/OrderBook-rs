@@ -586,6 +586,7 @@ pub use orderbook::BincodeEventSerializer;
 pub use orderbook::FileJournal;
 #[cfg(feature = "nats")]
 pub use orderbook::NatsTradePublisher;
+pub use orderbook::book_change_event::{PriceLevelChangedEvent, PriceLevelChangedListener};
 pub use orderbook::clock::{Clock, MonotonicClock, StubClock};
 pub use orderbook::implied_volatility::{
     BlackScholes, IVConfig, IVError, IVParams, IVQuality, IVResult, OptionType, PriceSource,
@@ -607,7 +608,7 @@ pub use orderbook::serialization::{EventSerializer, JsonEventSerializer, Seriali
 pub use orderbook::snapshot::{EnrichedSnapshot, MetricFlags};
 pub use orderbook::statistics::{DepthStats, DistributionBin};
 pub use orderbook::stp::STPMode;
-pub use orderbook::trade::{TradeListener, TradeResult};
+pub use orderbook::trade::{TradeEvent, TradeInfo, TradeListener, TradeResult, TransactionInfo};
 #[cfg(feature = "nats")]
 pub use orderbook::{BookChangeBatch, BookChangeEntry, NatsBookChangePublisher};
 pub use orderbook::{
