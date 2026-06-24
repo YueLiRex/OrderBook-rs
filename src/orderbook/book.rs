@@ -159,6 +159,20 @@ pub struct OrderBook<T = ()> {
     pub(super) clock: Arc<dyn Clock>,
 }
 
+/// A **lossy, inspection-only** serialization of the order book.
+///
+/// This `Serialize` impl is a human-readable debug/inspection dump, **not** a
+/// persistence or round-trip path. It intentionally omits matching
+/// configuration that [`OrderBook::create_snapshot_package`] preserves —
+/// `stp_mode`, tick/lot/min/max order size, the engine sequence, the kill
+/// switch, and the risk config — and there is no corresponding `Deserialize`,
+/// so it cannot reconstruct a book. The bids, asks, and order-location maps use
+/// `BTreeMap` so the JSON key ordering is deterministic across process runs, and
+/// the volatile best-bid/ask cache is not serialized.
+///
+/// For durable, reproducible persistence or replay, use
+/// [`OrderBook::snapshot_to_json`] / [`OrderBook::create_snapshot_package`]
+/// instead — those are the determinism-critical paths.
 impl<T> Serialize for OrderBook<T>
 where
     T: Serialize,
@@ -168,35 +182,37 @@ where
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
         use std::sync::atomic::Ordering;
 
-        let mut state = serializer.serialize_struct("OrderBook", 10)?;
+        let mut state = serializer.serialize_struct("OrderBook", 9)?;
 
         // Serialize symbol
         state.serialize_field("symbol", &self.symbol)?;
 
-        // Serialize bids as HashMap<u128, PriceLevel> using snapshots
-        let bids: HashMap<u128, _> = self
+        // Serialize bids as a BTreeMap<u128, PriceLevelSnapshot> so the key
+        // ordering is deterministic (a HashMap would vary across runs).
+        let bids: BTreeMap<u128, _> = self
             .bids
             .iter()
             .map(|entry| (*entry.key(), entry.value().snapshot()))
             .collect();
         state.serialize_field("bids", &bids)?;
 
-        // Serialize asks as HashMap<u128, PriceLevel> using snapshots
-        let asks: HashMap<u128, _> = self
+        // Serialize asks as a BTreeMap<u128, PriceLevelSnapshot> (deterministic).
+        let asks: BTreeMap<u128, _> = self
             .asks
             .iter()
             .map(|entry| (*entry.key(), entry.value().snapshot()))
             .collect();
         state.serialize_field("asks", &asks)?;
 
-        // Serialize order_locations as HashMap
-        let order_locations: HashMap<Id, (u128, Side)> = self
+        // Serialize order_locations keyed by the order id's string form so the
+        // map is both valid-JSON (string keys) and deterministically ordered.
+        let order_locations: BTreeMap<String, (u128, Side)> = self
             .order_locations
             .iter()
-            .map(|entry| (*entry.key(), *entry.value()))
+            .map(|entry| (entry.key().to_string(), *entry.value()))
             .collect();
         state.serialize_field("order_locations", &order_locations)?;
 
@@ -212,8 +228,8 @@ where
             &self.has_market_close.load(Ordering::Relaxed),
         )?;
 
-        // Serialize cache
-        state.serialize_field("cache", &self.cache)?;
+        // The volatile best-bid/ask cache is intentionally NOT serialized — it
+        // is a recomputable optimization, not book state.
 
         // Serialize fee schedule
         state.serialize_field("fee_schedule", &self.fee_schedule)?;

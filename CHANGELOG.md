@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`OrderBook` Serialize is deterministic and documented as lossy (#117).** The
+  hand-written `Serialize` for `OrderBook<T>` collected bids/asks/order_locations
+  into `HashMap`s (non-deterministic JSON key order across runs) and serialized
+  the volatile best-bid/ask cache, while omitting the matching configuration
+  (`stp_mode`, tick/lot/min/max order size, engine sequence, kill switch, risk
+  config) that `create_snapshot_package` preserves — with no `Deserialize`, so it
+  is a one-way inspection dump, not a persistence path. The collectors now use
+  `BTreeMap` (deterministic key order; order_locations keyed by the id string),
+  the cache is no longer serialized, and the impl carries rustdoc documenting it
+  as a lossy debug/inspection view, steering callers to `snapshot_to_json` /
+  `create_snapshot_package` for durable, reproducible persistence.
 - **Best bid/ask cache serves both sides and represents price 0 (#93).**
   `PriceLevelCache` stored both sides behind a single shared `cache_valid` flag
   and overloaded price `0` as the absent sentinel, so `best_bid()` zeroed the ask

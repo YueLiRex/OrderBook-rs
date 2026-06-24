@@ -70,6 +70,38 @@ mod tests {
     }
 
     #[test]
+    fn test_orderbook_serialize_is_deterministic_issue_117() {
+        // Regression for #117: the OrderBook Serialize impl must produce
+        // byte-identical output for identical state (BTreeMap key ordering, not
+        // HashMap), and must not serialize the volatile cache.
+        let book = OrderBook::<()>::new("DET-SER");
+        for i in 0..8u64 {
+            let side = if i % 2 == 0 { Side::Buy } else { Side::Sell };
+            let price = if side == Side::Buy {
+                100 - i as u128
+            } else {
+                200 + i as u128
+            };
+            let _ =
+                book.add_limit_order(Id::from_u64(i + 1), price, 10, side, TimeInForce::Gtc, None);
+        }
+        // Prime the cache so the old impl would have serialized a populated cache.
+        let _ = book.best_bid();
+        let _ = book.best_ask();
+
+        let first = serde_json::to_string(&book).expect("serialize book");
+        let second = serde_json::to_string(&book).expect("serialize book again");
+        assert_eq!(
+            first, second,
+            "OrderBook Serialize must be byte-identical for identical state"
+        );
+        assert!(
+            !first.contains("\"cache\""),
+            "the volatile cache must not be serialized"
+        );
+    }
+
+    #[test]
     fn test_both_sides_cached_after_sequential_reads_issue_93() {
         // Regression for #93: reading one side must not evict the other, and
         // mid_price()/spread() (which read both sides in sequence on the same
