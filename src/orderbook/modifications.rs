@@ -833,12 +833,16 @@ where
             });
         }
 
-        // For FOK orders, first check if the entire quantity can be matched without altering the book.
+        // For FOK orders, first check if the entire quantity can be matched
+        // without altering the book. Use the faithful feasibility check (lot_size
+        // + STP aware), not the raw-depth `peek_match`, so fill-or-kill stays
+        // all-or-nothing and never emits a partial fill it then reports as killed (#96).
         if order.is_fill_or_kill() {
-            let potential_match = self.peek_match(
+            let potential_match = self.fok_fillable_quantity(
                 order.side(),
                 order.total_quantity(),
                 Some(order.price().as_u128()),
+                order.user_id(),
             );
             if potential_match < order.total_quantity() {
                 self.track_state(

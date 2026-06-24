@@ -57,6 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   executed amount (the sum of the maker's trades in the submit), so
   `OrderStateTracker` / lifecycle consumers and any audit/risk reconciliation that
   sums filled quantity from terminal events are correct.
+- **Fill-or-kill feasibility is self-trade-prevention aware (#96).** FOK admission
+  checked feasibility with `peek_match`, which sums raw level depth: under
+  `STPMode::CancelMaker` it counted same-user resting quantity (which the real
+  match *cancels*, not fills), so a FOK could pass the check, cancel the maker,
+  fill nothing, and still return `InsufficientLiquidity` — with the book already
+  mutated. A new faithful `fok_fillable_quantity` mirrors the real walk —
+  `lot_size`-rounded budget, per-level STP via `check_stp_at_level`, and per-order
+  *drawable* depth (a non-auto-replenish reserve's hidden tranche is dropped
+  unfilled by the sweep, so it is excluded) — so a FOK that cannot be fully filled
+  is killed *before* any trade or cancel. (The `lot_size` divergence the report
+  also posited is not reachable through the validated admission path — it rejects
+  non-lot-multiple orders — but the rounding is kept so the check stays faithful to
+  the matching walk.)
 
 ## [0.8.0] — 2026-05-03
 

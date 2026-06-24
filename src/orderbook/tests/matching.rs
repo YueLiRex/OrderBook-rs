@@ -101,6 +101,91 @@ mod tests {
         }
     }
 
+    /// #96: the FOK feasibility check is now `lot_size`-aware. Admission already
+    /// rejects non-lot-multiple orders, so a lot-rounding *divergence* from raw
+    /// depth is not reachable through the public API — but the lot branch in the
+    /// faithful feasibility check must still admit a legitimately fillable,
+    /// lot-aligned FOK (it must not spuriously kill it).
+    #[test]
+    fn test_fok_with_lot_size_fills_when_depth_suffices_issue_96() {
+        let book: OrderBook<()> = OrderBook::with_lot_size("TEST", 5);
+        add_limit_order(&book, Side::Sell, 100, 5);
+        add_limit_order(&book, Side::Sell, 101, 5);
+
+        // FOK buy 10 (lot-aligned) at limit 101 — full reachable depth is 10.
+        let fok = OrderType::Standard {
+            id: Id::new(),
+            price: Price::new(101),
+            quantity: Quantity::new(10),
+            side: Side::Buy,
+            user_id: Hash32::zero(),
+            time_in_force: TimeInForce::Fok,
+            timestamp: TimestampMs::new(0),
+            extra_fields: (),
+        };
+        let result = book.add_order(fok);
+        assert!(
+            result.is_ok(),
+            "lot-aligned FOK with sufficient depth must fill, got {result:?}"
+        );
+        assert!(book.has_traded.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(book.asks.is_empty(), "both ask levels should be consumed");
+    }
+
+    /// #96: FOK feasibility must count only *drawable* depth. A non-auto-replenish
+    /// reserve's hidden tranche is dropped unfilled by the sweep, so it is not
+    /// reachable — a FOK that would need it must be killed before any partial fill.
+    #[test]
+    fn test_fok_excludes_non_replenish_reserve_hidden_issue_96() {
+        use std::num::NonZeroU64;
+
+        let book: OrderBook<()> = OrderBook::new("TEST");
+        let reserve_id = Id::new();
+        book.add_order(OrderType::ReserveOrder {
+            id: reserve_id,
+            price: Price::new(100),
+            visible_quantity: Quantity::new(5),
+            hidden_quantity: Quantity::new(5),
+            side: Side::Sell,
+            user_id: Hash32::zero(),
+            timestamp: TimestampMs::new(0),
+            time_in_force: TimeInForce::Gtc,
+            replenish_threshold: Quantity::new(0),
+            replenish_amount: Some(NonZeroU64::new(5).expect("nonzero")),
+            auto_replenish: false,
+            extra_fields: (),
+        })
+        .expect("reserve admitted");
+
+        // FOK buy 10 at price 100. Raw level total is 10 (5 visible + 5 hidden),
+        // but only the 5 visible is drawable, so the FOK must be killed with no
+        // trade and the reserve untouched. The old raw-depth check let it proceed,
+        // fill 5, drop the hidden, and error with the book already mutated.
+        let fok = OrderType::Standard {
+            id: Id::new(),
+            price: Price::new(100),
+            quantity: Quantity::new(10),
+            side: Side::Buy,
+            user_id: Hash32::zero(),
+            time_in_force: TimeInForce::Fok,
+            timestamp: TimestampMs::new(0),
+            extra_fields: (),
+        };
+        let result = book.add_order(fok);
+        assert!(
+            matches!(result, Err(OrderBookError::InsufficientLiquidity { .. })),
+            "FOK must be killed: a non-replenish reserve's hidden is not drawable, got {result:?}"
+        );
+        assert!(
+            !book.has_traded.load(std::sync::atomic::Ordering::SeqCst),
+            "FOK kill must emit no trades"
+        );
+        assert!(
+            book.get_order(reserve_id).is_some(),
+            "the reserve must be untouched by a killed FOK"
+        );
+    }
+
     #[test]
     fn test_market_buy_full_match() {
         let book = setup_book();

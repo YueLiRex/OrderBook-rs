@@ -267,6 +267,47 @@ mod tests {
             .expect("STP cancel must free the per-account risk slot");
     }
 
+    /// FOK feasibility must be STP-aware (#96): under CancelMaker, a same-user
+    /// resting order is NOT fillable (it gets cancelled), so a FOK that could only
+    /// be "filled" by crossing its own order must be killed up front — before any
+    /// maker is cancelled or any trade is emitted. The raw `peek_match` counted the
+    /// self quantity and let the FOK proceed, cancelling the maker and filling 0.
+    #[test]
+    fn test_fok_under_stp_cancel_maker_kills_without_touching_makers() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelMaker);
+
+        let u = user(7);
+        // The only resting liquidity at price 100 belongs to the taker's own user.
+        let maker = add_sell_order_with_user(&book, 100, 10, u);
+
+        let fok = OrderType::Standard {
+            id: Id::new(),
+            price: Price::new(100),
+            quantity: Quantity::new(10),
+            side: Side::Buy,
+            user_id: u,
+            time_in_force: TimeInForce::Fok,
+            timestamp: TimestampMs::new(crate::utils::current_time_millis()),
+            extra_fields: (),
+        };
+        let result = book.add_order(fok);
+
+        assert!(
+            matches!(result, Err(OrderBookError::InsufficientLiquidity { .. })),
+            "FOK must be killed when only self-liquidity exists, got {result:?}"
+        );
+        // Killed before matching: the maker is untouched and nothing traded.
+        assert!(
+            book.get_order(maker).is_some(),
+            "FOK kill must not cancel the resting maker"
+        );
+        assert!(
+            !book.has_traded.load(std::sync::atomic::Ordering::SeqCst),
+            "FOK kill must emit no trades"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // STPMode::None — backward compatibility
     // -----------------------------------------------------------------------
