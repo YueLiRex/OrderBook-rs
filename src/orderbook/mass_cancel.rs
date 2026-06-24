@@ -114,16 +114,19 @@ where
     /// use orderbook_rs::OrderBook;
     /// use pricelevel::{Id, Side, TimeInForce};
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let book: OrderBook<()> = OrderBook::new("TEST");
     /// let id1 = Id::new_uuid();
     /// let id2 = Id::new_uuid();
-    /// book.add_limit_order(id1, 100, 10, Side::Buy, TimeInForce::Gtc, None).unwrap();
-    /// book.add_limit_order(id2, 110, 5, Side::Sell, TimeInForce::Gtc, None).unwrap();
+    /// book.add_limit_order(id1, 100, 10, Side::Buy, TimeInForce::Gtc, None)?;
+    /// book.add_limit_order(id2, 110, 5, Side::Sell, TimeInForce::Gtc, None)?;
     ///
     /// let result = book.cancel_all_orders();
     /// assert_eq!(result.cancelled_count(), 2);
     /// assert_eq!(book.best_bid(), None);
     /// assert_eq!(book.best_ask(), None);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn cancel_all_orders(&self) -> MassCancelResult {
         self.cache.invalidate();
@@ -227,14 +230,17 @@ where
     /// use orderbook_rs::OrderBook;
     /// use pricelevel::{Id, Side, TimeInForce};
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let book: OrderBook<()> = OrderBook::new("TEST");
-    /// book.add_limit_order(Id::new_uuid(), 100, 10, Side::Buy, TimeInForce::Gtc, None).unwrap();
-    /// book.add_limit_order(Id::new_uuid(), 110, 5, Side::Sell, TimeInForce::Gtc, None).unwrap();
+    /// book.add_limit_order(Id::new_uuid(), 100, 10, Side::Buy, TimeInForce::Gtc, None)?;
+    /// book.add_limit_order(Id::new_uuid(), 110, 5, Side::Sell, TimeInForce::Gtc, None)?;
     ///
     /// let result = book.cancel_orders_by_side(Side::Buy);
     /// assert_eq!(result.cancelled_count(), 1);
     /// assert_eq!(book.best_bid(), None);
     /// assert!(book.best_ask().is_some());
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn cancel_orders_by_side(&self, side: Side) -> MassCancelResult {
         trace!(
@@ -266,19 +272,22 @@ where
     /// use orderbook_rs::OrderBook;
     /// use pricelevel::{Hash32, Id, Side, TimeInForce};
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let book: OrderBook<()> = OrderBook::new("TEST");
     /// let user_a = Hash32::new([1u8; 32]);
     /// let user_b = Hash32::new([2u8; 32]);
     ///
     /// book.add_limit_order_with_user(
     ///     Id::new_uuid(), 100, 10, Side::Buy, TimeInForce::Gtc, user_a, None,
-    /// ).unwrap();
+    /// )?;
     /// book.add_limit_order_with_user(
     ///     Id::new_uuid(), 110, 5, Side::Sell, TimeInForce::Gtc, user_b, None,
-    /// ).unwrap();
+    /// )?;
     ///
     /// let result = book.cancel_orders_by_user(user_a);
     /// assert_eq!(result.cancelled_count(), 1);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn cancel_orders_by_user(&self, user_id: Hash32) -> MassCancelResult {
         trace!(
@@ -320,14 +329,17 @@ where
     /// use orderbook_rs::OrderBook;
     /// use pricelevel::{Id, Side, TimeInForce};
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let book: OrderBook<()> = OrderBook::new("TEST");
-    /// book.add_limit_order(Id::new_uuid(), 100, 10, Side::Buy, TimeInForce::Gtc, None).unwrap();
-    /// book.add_limit_order(Id::new_uuid(), 200, 10, Side::Buy, TimeInForce::Gtc, None).unwrap();
-    /// book.add_limit_order(Id::new_uuid(), 300, 10, Side::Buy, TimeInForce::Gtc, None).unwrap();
+    /// book.add_limit_order(Id::new_uuid(), 100, 10, Side::Buy, TimeInForce::Gtc, None)?;
+    /// book.add_limit_order(Id::new_uuid(), 200, 10, Side::Buy, TimeInForce::Gtc, None)?;
+    /// book.add_limit_order(Id::new_uuid(), 300, 10, Side::Buy, TimeInForce::Gtc, None)?;
     ///
     /// let result = book.cancel_orders_by_price_range(Side::Buy, 100, 200);
     /// assert_eq!(result.cancelled_count(), 2);
     /// assert_eq!(book.best_bid(), Some(300));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn cancel_orders_by_price_range(
         &self,

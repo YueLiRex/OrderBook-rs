@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Doc examples use `?` instead of `.unwrap()` (#92).** The remaining `///` doc
+  examples that modelled `.unwrap()` on fallible order-book calls — all nine in
+  `mass_cancel.rs` — now use `?` inside a hidden `Result`-returning harness,
+  matching the idiomatic error handling the rules ask downstream users to follow
+  (the other modules were already swept). Doc-comments only; `#[cfg(test)]` and
+  `tests/` keep their `.unwrap()` per the testing allowance. `cargo test --doc`
+  stays green.
 - **Restored `#![deny(unsafe_code)]` and `#![warn(missing_docs)]` on `lib.rs` (#90).**
   Both crate-level attributes — mandated by `rules/global_rules.md` and `CLAUDE.md` —
   had drifted off `src/lib.rs`, silently allowing `unsafe` to creep in and `pub`
