@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Journal reopen CRC-validates the tail and truncates a torn entry (#110).**
+  `scan_write_position` determined the write position purely from
+  `entry_length`, so a crash mid-flush that left an intact header but a torn
+  payload/CRC was accepted: the journal resumed on top of the corrupt bytes and
+  `last_sequence()` returned an undecodable sequence (later surfacing as a
+  `CorruptEntry` at replay). The reopen scan now CRC-checks each entry (shared
+  `entry_crc_valid` helper) and treats the first CRC failure as end-of-valid
+  data — `write_pos` points at the torn entry's start so the next append
+  overwrites it, and `last_sequence()` reports the last decodable sequence. A
+  `tracing::warn!` fires on a detected torn tail. `journal`-gated.
 - **NATS publishers expose a graceful `shutdown`/flush path (#109).** Both
   `NatsTradePublisher` and `NatsBookChangePublisher` spawned their background
   batch task and discarded the `JoinHandle` with no cancellation signal, so a

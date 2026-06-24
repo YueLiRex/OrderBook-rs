@@ -32,6 +32,7 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use tracing::warn;
 
 /// Default segment size in bytes (256 MB).
 const DEFAULT_SEGMENT_SIZE: usize = 256 * 1024 * 1024;
@@ -399,10 +400,11 @@ where
                 message: e.to_string(),
             })?;
 
-        // Compute CRC32 over (sequence_num ‖ timestamp_ns ‖ payload)
-        let crc_data = &buf[4..]; // skip entry_length
-        let crc_end = crc_data.len().saturating_sub(0); // all of it
-        let crc = crc32fast::hash(&crc_data[..crc_end]);
+        // Compute CRC32 over (sequence_num ‖ timestamp_ns ‖ payload). The CRC
+        // is appended *after* this point, so `buf[4..]` is exactly that range
+        // and does not (and must not) cover the CRC field itself — the same
+        // range `entry_crc_valid` and `verify_integrity` re-check on read.
+        let crc = crc32fast::hash(&buf[4..]);
 
         // Write CRC32 (4 bytes LE)
         buf.write_all(&crc.to_le_bytes())
@@ -834,8 +836,46 @@ fn list_segments(dir: &Path) -> Result<Vec<u64>, JournalError> {
     Ok(seqs)
 }
 
-/// Scan a memory-mapped segment to find the write position (byte offset of
-/// the first zero entry_length, i.e. end of written data).
+/// Verifies the CRC32 of the entry occupying `data[offset..entry_end]`.
+///
+/// `entry_end` must already be bounds-checked against `data`. The CRC covers
+/// `sequence_num ‖ timestamp_ns ‖ payload` (the bytes between the 4-byte
+/// `entry_length` header and the trailing 4-byte CRC), matching the layout
+/// written by [`FileJournal::encode_entry`]. Returns `false` for a torn entry
+/// (payload or CRC damaged by a crash mid-flush) or any out-of-bounds slice.
+fn entry_crc_valid(data: &[u8], offset: usize, entry_end: usize) -> bool {
+    let crc_start = match entry_end.checked_sub(ENTRY_CRC_SIZE) {
+        Some(s) => s,
+        None => return false,
+    };
+    let payload_start = match offset.checked_add(4) {
+        Some(p) => p,
+        None => return false,
+    };
+    if payload_start > crc_start || entry_end > data.len() {
+        return false;
+    }
+    let (Some(crc_bytes), Some(checksummed)) = (
+        data.get(crc_start..entry_end),
+        data.get(payload_start..crc_start),
+    ) else {
+        return false;
+    };
+    let stored_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    crc32fast::hash(checksummed) == stored_crc
+}
+
+/// Scan a memory-mapped segment to find the write position (byte offset of the
+/// end of valid written data).
+///
+/// Stops at the first zero `entry_length` (the zero-filled tail), at a header
+/// that claims to extend beyond the segment, or — crucially — at the first
+/// entry whose CRC does not validate. A crash mid-flush can leave a torn tail
+/// entry with an intact `entry_length`/`sequence_num` header but a damaged
+/// payload/CRC; treating that entry's start as end-of-valid-data means the next
+/// append truncates over the corruption rather than resuming on top of it, and
+/// [`scan_last_sequence`] (which scans only up to this position) reports the
+/// last decodable sequence.
 fn scan_write_position(data: &[u8], capacity: usize) -> usize {
     let mut offset = 0usize;
 
@@ -862,6 +902,14 @@ fn scan_write_position(data: &[u8], capacity: usize) -> usize {
             Some(end) if end <= capacity && end <= data.len() => end,
             _ => break,
         };
+
+        if !entry_crc_valid(data, offset, entry_end) {
+            warn!(
+                offset,
+                "torn journal tail detected on reopen; truncating to the last good entry"
+            );
+            break;
+        }
 
         offset = entry_end;
     }
@@ -1128,6 +1176,77 @@ mod tests {
         assert!(integrity.is_err());
         let err_msg = format!("{}", integrity.unwrap_err());
         assert!(err_msg.contains("corrupt journal entry"));
+    }
+
+    /// Walks the entry-length headers (the pre-CRC scan) to find the byte
+    /// offset of the end of written data. Used by the torn-tail test to corrupt
+    /// the final entry without depending on the CRC-aware scanner under test.
+    fn written_len(data: &[u8]) -> usize {
+        let mut off = 0usize;
+        while off + 4 <= data.len() {
+            let el = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+                as usize;
+            if el == 0 {
+                break;
+            }
+            match off.checked_add(4).and_then(|v| v.checked_add(el)) {
+                Some(end) if end <= data.len() => off = end,
+                _ => break,
+            }
+        }
+        off
+    }
+
+    #[test]
+    fn test_reopen_truncates_torn_tail_then_appends_and_replays() {
+        let dir = tempfile::tempdir().unwrap_or_else(|_| panic!("tempdir"));
+
+        // Write three valid entries (seq 0, 1, 2).
+        let journal = FileJournal::<()>::open(dir.path()).unwrap_or_else(|_| panic!("open"));
+        for i in 0..3 {
+            assert!(journal.append(&make_event(i)).is_ok());
+        }
+        assert_eq!(journal.last_sequence(), Some(2));
+        drop(journal); // release the mmap
+
+        // Corrupt the final entry's trailing CRC byte: a crash mid-flush leaves
+        // the entry_length/sequence_num header intact but the payload/CRC torn.
+        let segs = list_segments(dir.path()).unwrap_or_default();
+        assert_eq!(segs.len(), 1);
+        let seg_path = segment_path(dir.path(), segs[0]);
+        let mut data = fs::read(&seg_path).unwrap_or_default();
+        let write_pos = written_len(&data);
+        assert!(write_pos > 0);
+        data[write_pos - 1] ^= 0xFF; // flip the last CRC byte of the last entry
+        fs::write(&seg_path, &data).unwrap_or_default();
+
+        // Reopen: the scan must stop at the torn entry, so last_sequence reports
+        // the last *good* entry (seq 1), not the torn seq 2.
+        let journal2 = FileJournal::<()>::open(dir.path()).unwrap_or_else(|_| panic!("reopen"));
+        assert_eq!(
+            journal2.last_sequence(),
+            Some(1),
+            "torn tail must truncate to the last good entry"
+        );
+
+        // Appending after a torn-tail reopen overwrites the corrupt bytes, so a
+        // subsequent integrity check and replay succeed.
+        assert!(journal2.append(&make_event(2)).is_ok());
+        assert_eq!(journal2.last_sequence(), Some(2));
+        assert!(
+            journal2.verify_integrity().is_ok(),
+            "the torn entry must be overwritten by the new append"
+        );
+
+        let entries: Vec<_> = journal2
+            .read_from(0)
+            .unwrap_or_else(|_| panic!("read_from"))
+            .collect();
+        assert_eq!(entries.len(), 3, "0, 1, and the re-appended 2");
+        for (i, entry) in entries.iter().enumerate() {
+            let e = entry.as_ref().unwrap_or_else(|_| panic!("entry decodes"));
+            assert_eq!(e.event.sequence_num, i as u64);
+        }
     }
 
     #[test]
