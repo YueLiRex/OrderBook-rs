@@ -80,9 +80,10 @@ mod tests {
             json.contains("order_locations"),
             "Serialized JSON should contain order_locations field"
         );
+        // #117: the volatile best-bid/ask cache is intentionally NOT serialized.
         assert!(
-            json.contains("cache"),
-            "Serialized JSON should contain cache field"
+            !json.contains("\"cache\""),
+            "Serialized JSON must not contain the volatile cache field"
         );
 
         // Verify the JSON is valid by parsing it back
