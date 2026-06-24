@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reject zero quantity and zero price at the `NewOrder` wire boundary (#125).**
+  `TryFrom<&NewOrderWire> for OrderType<()>` validated padding, negative price,
+  side, time-in-force, and order type but never checked `qty`, so a wire `qty == 0`
+  became a degenerate `OrderType::Standard { quantity: 0 }` that slipped past the
+  default-config lot check (passes for 0) and `min_order_size` (defaults to `None`)
+  and reached the insert/match path. The boundary now rejects `qty == 0` with
+  `WireError::InvalidPayload("NewOrder: zero quantity")`. **Decision (price 0):**
+  also reject `price == 0` (`"NewOrder: zero price"`) — price 0 is the cache's
+  "no best price" sentinel and a zero-priced limit order is structurally
+  meaningless, so only `price > 0` is admissible. `CancelReplaceWire` carries a
+  `new_qty` field but has no domain conversion yet, so there is nothing to mirror;
+  the same guard should be added when it gains one.
 - **Resolve declared-but-unemitted wire/event surfaces (#119).** Three public
   surfaces claimed behavior the engine never implemented; all three are now backed
   by real engine paths. (a) `RejectReason::DuplicateOrderId` (stable wire code 12)
