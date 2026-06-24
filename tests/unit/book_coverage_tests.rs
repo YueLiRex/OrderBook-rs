@@ -70,6 +70,30 @@ mod tests {
     }
 
     #[test]
+    fn test_outbound_event_types_resolve_at_crate_root_issue_123() {
+        // #123: these outbound event types are documented as first-class but
+        // were prelude-only. They must now resolve at the crate root, like
+        // `orderbook_rs::TradeResult` already does.
+        use orderbook_rs::{PriceLevelChangedEvent, TradeEvent, TradeInfo, TransactionInfo};
+        // PriceLevelChangedEvent is a plain struct — construct one to prove the
+        // path resolves to a usable type.
+        let evt = PriceLevelChangedEvent {
+            side: Side::Buy,
+            price: 100,
+            quantity: 5,
+            engine_seq: 1,
+        };
+        assert_eq!(evt.price, 100);
+        // The remaining types only need to name-resolve at the root.
+        fn _assert_resolves(
+            _: Option<TradeEvent>,
+            _: Option<TradeInfo>,
+            _: Option<TransactionInfo>,
+        ) {
+        }
+    }
+
+    #[test]
     fn test_orderbook_serialize_is_deterministic_issue_117() {
         // Regression for #117: the OrderBook Serialize impl must produce
         // byte-identical output for identical state (BTreeMap key ordering, not

@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Outbound event types surfaced at the crate root; `current_time_millis` gains a
+  determinism caveat (#123).** `TradeEvent`, `TradeInfo`, `TransactionInfo`,
+  `PriceLevelChangedEvent`, and `PriceLevelChangedListener` were re-exported only
+  from the prelude, so `orderbook_rs::TradeEvent` failed to resolve even though the
+  crate docs name `TradeEvent` / `PriceLevelChangedEvent` as first-class outbound
+  types (`orderbook_rs::TradeResult` already resolved). They are now re-exported at
+  the crate root too. Separately, `current_time_millis` documents that it reads the
+  **non-monotonic wall clock**, truncates to `u64` ms, and must **not** be used on
+  deterministic / matching / replay paths — those must take time from the `Clock`
+  trait (`MonotonicClock` / `StubClock`) — and gained `#[must_use]`.
 - **Doc gaps closed on IV / fee / wire items (#122).** The `Result`-returning IV
   functions (`solve_iv`, `solve_iv_bisection`, `implied_volatility`,
   `implied_volatility_with_config`) and the `TryFrom<&NewOrderWire> for OrderType<()>`
