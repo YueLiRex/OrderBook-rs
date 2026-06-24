@@ -624,7 +624,9 @@ where
         match source {
             ReferencePriceSource::LastTrade => self.last_trade_price(),
             ReferencePriceSource::Mid => match (self.best_bid(), self.best_ask()) {
-                (Some(bid), Some(ask)) => Some((bid + ask) / 2),
+                // `midpoint` computes (bid + ask) / 2 without the intermediate
+                // `bid + ask` overflowing u128 at extreme prices.
+                (Some(bid), Some(ask)) => Some(bid.midpoint(ask)),
                 _ => self.last_trade_price(),
             },
             ReferencePriceSource::FixedPrice(p) => Some(p),
