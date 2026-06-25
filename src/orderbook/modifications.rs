@@ -5,6 +5,7 @@ use crate::orderbook::matching::MatchOutcome;
 use crate::orderbook::order_state::{CancelReason, OrderStatus};
 use crate::orderbook::reject_reason::RejectReason;
 use crate::orderbook::trade::TradeResult;
+use either::Either;
 use pricelevel::{Id, OrderType, OrderUpdate, PriceLevel, Quantity, Side};
 use std::sync::Arc;
 use tracing::trace;
@@ -204,6 +205,11 @@ where
                         new_order.total_quantity(),
                     )?;
 
+                    // #168: reject a re-price that would self-cross the same
+                    // user's opposite-side liquidity under CancelTaker/CancelBoth
+                    // BEFORE cancelling the original, so the original survives.
+                    self.check_modify_stp_self_cross(&new_order)?;
+
                     // Both checks passed: cancel the original and add the
                     // updated order. `add_order` re-runs its own checks;
                     // post-cancel the account count is restored so its risk
@@ -325,6 +331,11 @@ where
                         new_order.price().as_u128(),
                         new_order.total_quantity(),
                     )?;
+
+                    // #168: reject a re-price that would self-cross the same
+                    // user's opposite-side liquidity under CancelTaker/CancelBoth
+                    // BEFORE cancelling the original, so the original survives.
+                    self.check_modify_stp_self_cross(&new_order)?;
 
                     // Both checks passed: cancel the original and add the
                     // updated order.
@@ -506,6 +517,11 @@ where
                         new_order.price().as_u128(),
                         new_order.total_quantity(),
                     )?;
+
+                    // #168: reject a re-price that would self-cross the same
+                    // user's opposite-side liquidity under CancelTaker/CancelBoth
+                    // BEFORE cancelling the original, so the original survives.
+                    self.check_modify_stp_self_cross(&new_order)?;
 
                     // Both checks passed: cancel the original and add the
                     // new order.
@@ -842,6 +858,92 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    /// STP self-cross pre-check for the validate-first atomic modify (#168).
+    ///
+    /// Closes the one post-match modify-atomicity gap #98 left open. Under
+    /// [`STPMode::CancelTaker`](crate::orderbook::stp::STPMode::CancelTaker) /
+    /// [`CancelBoth`](crate::orderbook::stp::STPMode::CancelBoth), if a
+    /// re-priced order would cross into the **same user's** resting liquidity on
+    /// the opposite side, `add_order` matches post-cancel and cancels the taker
+    /// (the re-added order) — *after* the original was already removed,
+    /// destroying it. This dry-runs the crossable opposite side and, if the
+    /// sweep would reach a same-user maker while the taker still has unfilled
+    /// quantity (the exact condition under which the engine sets
+    /// `stp_taker_cancelled`), returns [`OrderBookError::SelfTradePrevented`]
+    /// **before** the original is cancelled, so it survives unchanged.
+    ///
+    /// No-op when STP is off, the taker is anonymous, or the mode is
+    /// [`CancelMaker`](crate::orderbook::stp::STPMode::CancelMaker) (which
+    /// cancels the maker and rests the taker — it never destroys the re-added
+    /// order). Like the other validate-first checks (#98) it is a pure function
+    /// of the new order plus the *opposite* book side, so evaluating it while
+    /// the same-side original still rests yields the same verdict as after
+    /// cancel.
+    pub(super) fn check_modify_stp_self_cross(
+        &self,
+        new_order: &OrderType<T>,
+    ) -> Result<(), OrderBookError> {
+        use crate::orderbook::stp::STPMode;
+
+        let taker_user_id = new_order.user_id();
+        // Only CancelTaker / CancelBoth cancel the taker; None / CancelMaker
+        // rest it, so the re-added order is never destroyed.
+        match self.stp_mode {
+            STPMode::CancelTaker | STPMode::CancelBoth => {}
+            _ => return Ok(()),
+        }
+        if taker_user_id == pricelevel::Hash32::zero() {
+            return Ok(());
+        }
+
+        let side = new_order.side();
+        let new_price = new_order.price().as_u128();
+        let opposite = match side {
+            Side::Buy => &self.asks,
+            Side::Sell => &self.bids,
+        };
+        // Walk the crossable opposite side in price-time priority — asks
+        // ascending for a Buy, bids descending for a Sell — exactly the sweep's
+        // visit order.
+        let iter = match side {
+            Side::Buy => Either::Left(opposite.iter()),
+            Side::Sell => Either::Right(opposite.iter().rev()),
+        };
+
+        let mut remaining = new_order.total_quantity();
+        for entry in iter {
+            if remaining == 0 {
+                // The taker fully fills against non-self depth before reaching
+                // any same-user maker → the engine never cancels it.
+                return Ok(());
+            }
+            let price = *entry.key();
+            let crosses = match side {
+                Side::Buy => new_price >= price,
+                Side::Sell => new_price <= price,
+            };
+            if !crosses {
+                // Price-sorted levels: no further level can cross.
+                break;
+            }
+            let level = entry.value();
+            if level.iter_orders().any(|o| o.user_id() == taker_user_id) {
+                // The sweep reaches a level holding a same-user maker while the
+                // taker still has unfilled quantity: the engine would cancel the
+                // taker here. Reject the modify before the original is cancelled.
+                return Err(OrderBookError::SelfTradePrevented {
+                    mode: self.stp_mode,
+                    taker_order_id: new_order.id(),
+                    user_id: taker_user_id,
+                });
+            }
+            // No same-user maker at this level: the taker consumes its full
+            // matchable depth (the authoritative upstream dry run), then walks on.
+            remaining = remaining.saturating_sub(level.matchable_quantity(remaining));
+        }
         Ok(())
     }
 

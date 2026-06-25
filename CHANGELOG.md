@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.0] — 2026-06-24
 
+### Fixed
+
+- **Extend modify atomicity to the STP self-cross taker-cancellation edge (#168).**
+  #98 made `UpdatePrice` / `UpdatePriceAndQuantity` / `Replace` validate-first for
+  every *pre-match* admission rejection, but one *post-match* case slipped
+  through: under `STPMode::CancelTaker` / `CancelBoth`, re-pricing an order so it
+  crosses into the **same user's** resting liquidity on the opposite side made
+  `add_order` match post-cancel and cancel the taker (the re-added order) — *after*
+  the original was already removed, destroying it. The modify guard now runs a
+  `check_modify_stp_self_cross` pre-check (after the risk check, before
+  `cancel_order`): it dry-runs the crossable opposite side in the sweep's
+  price-time order, consuming each non-self level's authoritative
+  `matchable_quantity`, and if it reaches a same-user maker while the taker still
+  has unfilled quantity — the exact condition under which the engine sets
+  `stp_taker_cancelled` — returns `OrderBookError::SelfTradePrevented` so the
+  original survives unchanged. No-op for STP `None` / `CancelMaker` (the taker
+  rests, never destroyed) and anonymous takers; lot-aligned by construction
+  (`validate_order_shape` runs first), so the verdict matches the engine exactly.
+
 ### Changed
 
 - **Delegate FOK matchable-depth to `PriceLevel::matchable_quantity` (#136).**
