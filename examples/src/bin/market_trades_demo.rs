@@ -66,7 +66,7 @@ fn main() {
 
 /// Add bid orders (buy side) to the order book
 fn add_bid_orders(book: &OrderBook) {
-    let bid_levels = vec![
+    let bid_levels = [
         (49900, 100), // price, quantity
         (49850, 150),
         (49800, 200),
@@ -99,7 +99,7 @@ fn add_bid_orders(book: &OrderBook) {
 
 /// Add ask orders (sell side) to the order book
 fn add_ask_orders(book: &OrderBook) {
-    let ask_levels = vec![
+    let ask_levels = [
         (50100, 100), // price, quantity
         (50150, 150),
         (50200, 200),

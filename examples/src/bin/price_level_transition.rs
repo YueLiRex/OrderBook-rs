@@ -133,7 +133,7 @@ fn main() {
 
                     local_counter += 1;
 
-                    if local_counter % 100 == 0 {
+                    if local_counter.is_multiple_of(100) {
                         thread::sleep(Duration::from_micros(10));
                     }
                 }

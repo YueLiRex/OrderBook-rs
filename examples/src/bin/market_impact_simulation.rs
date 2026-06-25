@@ -184,7 +184,7 @@ fn demo_order_simulation(book: &OrderBook) {
             i + 1,
             qty,
             price,
-            (*price as u128) * (*qty as u128)
+            *price * (*qty as u128)
         );
     }
 
@@ -214,7 +214,7 @@ fn demo_order_simulation(book: &OrderBook) {
             i + 1,
             qty,
             price,
-            (*price as u128) * (*qty as u128)
+            *price * (*qty as u128)
         );
     }
 
@@ -319,7 +319,7 @@ fn demo_pretrade_risk_assessment(book: &OrderBook) {
     info!("   Average price: {:.2}", simulation.avg_price);
 
     if let Some(best_ask) = book.best_ask() {
-        let best_cost = (best_ask as u128) * (order_size as u128);
+        let best_cost = best_ask * (order_size as u128);
         let additional_cost = total_cost.saturating_sub(best_cost);
         info!("   Cost at best price: {} units", best_cost);
         info!("   Additional cost (slippage): {} units", additional_cost);

@@ -48,7 +48,7 @@ pub fn setup_orders_for_hot_spot_test(order_book: &crate::OrderBook) {
         let is_buy = i % 2 == 0;
         let side = if is_buy { Side::Buy } else { Side::Sell };
         let price_base: u128 = if is_buy { 9900 } else { 10000 };
-        let price_offset: u128 = (i % 100) * 1;
+        let price_offset: u128 = i % 100;
         let price: u128 = if is_buy {
             price_base - price_offset
         } else {

@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add multiple order books
     let symbols = vec!["BTC/USD", "ETH/USD", "SOL/USD"];
     for symbol in &symbols {
-        manager.add_book(symbol);
+        manager.add_book(symbol).expect("add book");
     }
 
     // Start the trade processor
@@ -150,7 +150,7 @@ mod tests {
         let mut manager = BookManagerStd::<()>::new();
 
         // Add a book
-        manager.add_book("TEST/USD");
+        manager.add_book("TEST/USD").expect("add book");
 
         // Verify book was added
         assert!(manager.get_book("TEST/USD").is_some());

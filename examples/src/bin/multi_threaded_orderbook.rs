@@ -30,7 +30,7 @@ fn run_performance_test() {
     populate_orderbook(&book, 1000);
 
     // Create thread performance counters
-    let mut operation_counters = vec![0; THREAD_COUNT];
+    let mut operation_counters = [0; THREAD_COUNT];
 
     // Synchronization barrier to ensure all threads start at the same time
     let barrier = Arc::new(Barrier::new(THREAD_COUNT + 1)); // +1 for main thread
@@ -58,7 +58,7 @@ fn run_performance_test() {
                 match thread_id % 4 {
                     0 => {
                         // This thread adds limit orders
-                        let buy_side = local_counter % 2 == 0;
+                        let buy_side = local_counter.is_multiple_of(2);
                         let side = if buy_side { Side::Buy } else { Side::Sell };
                         let price_base: u128 = if buy_side { 9900 } else { 10100 };
                         let price_offset: u128 = (local_counter as u128 % 10) * 10;
@@ -76,7 +76,7 @@ fn run_performance_test() {
                     }
                     1 => {
                         // This thread submits market orders
-                        let side = if local_counter % 2 == 0 {
+                        let side = if local_counter.is_multiple_of(2) {
                             Side::Buy
                         } else {
                             Side::Sell

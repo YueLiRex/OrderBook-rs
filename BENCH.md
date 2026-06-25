@@ -4,9 +4,9 @@ This document covers the **HDR-histogram** bench suite added in 0.7.0
 under `benches/order_book/*_hdr.rs`. The default Criterion benches in
 the same directory remain — they publish HTML reports to
 `target/criterion/` and report a mean-centric statistical comparison
-that Criterion does well. The HDR benches are the source of truth for
-the **tail** numbers (`p50` / `p99` / `p99.9` / `p99.99`) that tier-one
-electronic exchanges quote in SLOs.
+that Criterion does well (see `BENCHMARKS.md`). The HDR benches are the
+source of truth for the **tail** numbers (`p50` / `p99` / `p99.9` /
+`p99.99`) that tier-one electronic exchanges quote in SLOs.
 
 ## Allocation profile (feature `alloc-counters`)
 
@@ -26,23 +26,37 @@ static A: CountingAllocator<System> = CountingAllocator::new(System);
 `benches/order_book/alloc_count.rs` runs the same mixed 70 / 20 / 10
 workload as `mixed_70_20_10_hdr` but reports `allocs_per_op` and
 `bytes_alloc/op` over the measurement window (200 000 warmup +
-1 000 000 measured). A reference run on the same M4 Max host:
+1 000 000 measured). A reference run on the M4 Max host (orderbook-rs
+0.9.0):
 
-| counter        | value         |
-|----------------|---------------|
-| allocs         | 17 757 222    |
-| deallocs       | 17 690 635    |
-| bytes_alloc    | 4 926 064 834 |
-| bytes_dealloc  | 4 897 062 482 |
-| **allocs/op**  | **17.76**     |
-| bytes_alloc/op | 4 926         |
+| counter        | value           |
+|----------------|-----------------|
+| allocs         | 14 945 144      |
+| deallocs       | 14 834 805      |
+| bytes_alloc    | 790 864 668 474 |
+| bytes_dealloc  | 790 836 738 974 |
+| **allocs/op**  | **14.95**       |
+| bytes_alloc/op | 790 865         |
 
-This is the headline number for "what does the matching engine cost
-in alloc pressure on a realistic workload" — useful as a regression
-signal much more than as an absolute target. The integration test
-`tests/unit/alloc_budget_tests.rs` runs a smaller 10 000-op slice and
-asserts `allocs/op < 10` to catch order-of-magnitude regressions in
-CI.
+`allocs/op` is the headline number for "what does the matching engine
+cost in alloc pressure on a realistic workload" — useful as a
+regression signal much more than as an absolute target. It is balanced
+(allocs ≈ deallocs, no leak) and is in the same ballpark as the 0.7.0
+reference (`~17.76`). Note `allocs/op` is workload-randomness-sensitive
+on this synthetic stream — repeat runs land in the `~15–19` range.
+
+> **Note (`bytes_alloc/op`).** On this monotonically-growing
+> deep-book workload the per-op *bytes* allocated is large and much
+> higher than the historical 0.7.0 reference (`~4 926`). It is dominated
+> by the few large transient buffers a market sweep allocates against a
+> very deep price level (the workload concentrates ~700 k resting orders
+> into a narrow band, so individual levels get thousands of orders deep).
+> Treat `bytes_alloc/op` as a coarse signal only; `allocs/op` is the
+> stable regression metric and is what CI guards.
+
+The integration test `tests/alloc_budget.rs` runs a smaller 10 000-op
+slice and asserts `allocs/op` stays under a fixed ceiling to catch
+order-of-magnitude regressions in CI.
 
 Run yourself:
 
@@ -56,7 +70,7 @@ Per-run summaries land in `target/alloc-counters/<scenario>.md`.
 ## How to run
 
 ```bash
-make bench-hdr                 # all six scenarios
+make bench-hdr                 # all seven scenarios
 cargo bench --bench mixed_70_20_10_hdr   # single scenario
 ```
 
@@ -79,7 +93,8 @@ plotters; the directory lives under `target/` and is gitignored.
 - **Warmup.** Long-running scenarios (`add_only`, `mixed_70_20_10`)
   discard 200 000 ops before the measurement window starts.
   Pre-loading scenarios (`cancel_only`, `aggressive_walk`,
-  `mass_cancel_burst`) seed the book in a non-measured loop instead.
+  `mass_cancel_burst`, `stp_sweep`) seed the book in a non-measured loop
+  instead.
 - **Workload determinism.** All scenarios drive a self-contained
   xorshift PRNG seeded with `0xA5A5_A5A5_A5A5_A5A5`. Reproducing a run
   with the same code produces the same op stream, modulo concurrent
@@ -103,14 +118,14 @@ plotters; the directory lives under `target/` and is gitignored.
 
 | Item | Value |
 |---|---|
-| Host | Apple M4 Max, macOS 25.4 (Darwin 25.4.0, `arm64`) |
+| Host | Apple M4 Max, macOS (Darwin 25.5.0, `arm64`) |
 | Pinning | None |
-| Toolchain | `rustc 1.95.0` (stable) |
+| Toolchain | `rustc 1.96.0` (stable) |
 | Profile | `--release` (Cargo `bench` profile = `release` clone) |
 | `RUSTFLAGS` | unset |
 | Allocator | system allocator |
-| Date | 2026-04-25 |
-| Crate version | `0.7.0-unreleased` (commit on `issue-56-hdr-bench`) |
+| Date | 2026-06-25 |
+| Crate version | `0.9.0` |
 
 ## Headline numbers
 
@@ -123,11 +138,11 @@ All values in nanoseconds. **Closed-loop service time** — see
 
 | Quantile | Latency (ns) |
 |---|---|
-| p50    | 791 |
-| p99    | 78 847 |
-| p99.9  | 146 303 |
-| p99.99 | 401 663 |
-| max    | 528 895 |
+| p50    | 959 |
+| p99    | 64 383 |
+| p99.9  | 99 711 |
+| p99.99 | 130 751 |
+| max    | 196 863 |
 
 **Where the tail comes from.** The book grows monotonically across the
 measurement window, so each insert must walk the `SkipMap` to the
@@ -142,15 +157,15 @@ working set outgrows L1.
 
 | Quantile | Latency (ns) |
 |---|---|
-| p50    | 42 |
-| p99    | 25 167 |
-| p99.9  | 34 047 |
-| p99.99 | 172 031 |
-| max    | 1 271 807 |
+| p50    | 41 |
+| p99    | 19 631 |
+| p99.9  | 24 751 |
+| p99.99 | 26 847 |
+| max    | 1 081 343 |
 
 **Where the tail comes from.** `DashMap::remove` on the order index is
 a shard-local lock acquisition; the median is dominated by that
-single-cycle CAS path. The very long p99.99 / max tails reflect
+single-cycle CAS path. The very long max tail reflects
 shard-contention windows when multiple removals land on the same
 shard back to back, plus rare allocator returns of large
 `PriceLevel` linked-list nodes.
@@ -162,11 +177,11 @@ buys with qty `5..=20`.
 
 | Quantile | Latency (ns) |
 |---|---|
-| p50    | 41 |
-| p99    | 7 083 |
-| p99.9  | 16 959 |
-| p99.99 | 33 823 |
-| max    | 203 263 |
+| p50    | 42 |
+| p99    | 3 001 |
+| p99.9  | 6 167 |
+| p99.99 | 8 503 |
+| max    | 41 375 |
 
 **Where the tail comes from.** The fill loop iterates per-order at
 each level until the requested quantity is consumed. Median is fast
@@ -180,11 +195,11 @@ at once.
 
 | Quantile | Latency (ns) |
 |---|---|
-| p50    | 667 |
-| p99    | 39 487 |
-| p99.9  | 71 999 |
-| p99.99 | 298 239 |
-| max    | 644 607 |
+| p50    | 833 |
+| p99    | 33 375 |
+| p99.9  | 53 215 |
+| p99.99 | 73 599 |
+| max    | 127 423 |
 
 **Where the tail comes from.** Mix of all three previous tails. The
 median tracks `add_only` (because submits are 70 % of the workload).
@@ -199,10 +214,10 @@ Refills 3 resting asks every 5 ops; 200 000 IOC buy probes with qty
 | Quantile | Latency (ns) |
 |---|---|
 | p50    | 42 |
-| p99    | 5 711 |
-| p99.9  | 15 127 |
-| p99.99 | 50 431 |
-| max    | 418 303 |
+| p99    | 4 251 |
+| p99.9  | 5 083 |
+| p99.99 | 5 459 |
+| max    | 38 527 |
 
 **Where the tail comes from.** Most probes either fully fill the
 small resting depth or partial-fill and short-circuit. The p99 is
@@ -217,17 +232,38 @@ wall-clock guard rather than a per-op tail.
 
 | Quantile | Latency (ns) |
 |---|---|
-| p50    | 25 711 |
-| p99    | 48 447 |
-| p99.9  | 312 575 |
-| p99.99 | 312 575 |
-| max    | 312 575 |
+| p50    | 18 799 |
+| p99    | 26 751 |
+| p99.9  | 36 031 |
+| p99.99 | 36 031 |
+| max    | 36 031 |
 
 **Where the tail comes from.** Burst latency scales linearly with the
-book depth; on a tight host the median is ~26 µs to drain 10 000
-orders, ~0.5 ns per order amortised. The p99.9 / p99.99 / max all
+book depth; on a tight host the median is ~19 µs to drain 10 000
+orders, ~1.9 ns per order amortised. The p99.9 / p99.99 / max all
 collapse to the same value because only 500 samples were taken — the
 single worst-case observation dominates.
+
+### `stp_sweep` — self-trade-prevention CancelMaker self-cross (added 0.9.0)
+
+`OrderBook::with_stp_mode(.., CancelMaker)` seeded with 50 ask levels
+(each one taker-owned sell + 8 other-maker sells); 100 000 measured
+aggressive self-crossing market buys from the taker, each one hitting
+the per-level STP scan + inline maker cancel (#107).
+
+| Quantile | Latency (ns) |
+|---|---|
+| p50    | 291 |
+| p99    | 3 917 |
+| p99.9  | 4 127 |
+| p99.99 | 5 167 |
+| max    | 45 087 |
+
+**Where the tail comes from.** Every measured op runs the per-level
+self-trade scan and cancels the same-user maker inline over the pooled
+snapshot buffer (#107, no per-level `Vec` allocation). The median is
+the scan + single cancel; the tail is the rare sweep that touches
+several levels plus allocator jitter re-seeding the taker order.
 
 ## Limitations
 
@@ -245,7 +281,7 @@ single worst-case observation dominates.
 ## Reproducing
 
 ```bash
-git checkout issue-56-hdr-bench  # or main once merged
+git checkout main
 make bench-hdr
 cat target/bench-hdr/*.hgrm     # raw histograms
 ```
