@@ -373,41 +373,50 @@ fn spawn_maker_thread(
             match local_count % 5 {
                 0 => {
                     // Standard limit order
-                    if let Ok(_) = order_book.add_limit_order(
-                        id,
-                        price,
-                        quantity,
-                        side,
-                        TimeInForce::Gtc,
-                        Some(metadata),
-                    ) {
+                    if order_book
+                        .add_limit_order(
+                            id,
+                            price,
+                            quantity,
+                            side,
+                            TimeInForce::Gtc,
+                            Some(metadata),
+                        )
+                        .is_ok()
+                    {
                         order_added = true;
                     }
                 }
                 1 => {
                     // Post-only order
-                    if let Ok(_) = order_book.add_post_only_order(
-                        id,
-                        price,
-                        quantity,
-                        side,
-                        TimeInForce::Gtc,
-                        Some(metadata),
-                    ) {
+                    if order_book
+                        .add_post_only_order(
+                            id,
+                            price,
+                            quantity,
+                            side,
+                            TimeInForce::Gtc,
+                            Some(metadata),
+                        )
+                        .is_ok()
+                    {
                         order_added = true;
                     }
                 }
                 2 => {
                     // Iceberg order
-                    if let Ok(_) = order_book.add_iceberg_order(
-                        id,
-                        price,
-                        quantity / 4,
-                        quantity * 3 / 4,
-                        side,
-                        TimeInForce::Gtc,
-                        Some(metadata),
-                    ) {
+                    if order_book
+                        .add_iceberg_order(
+                            id,
+                            price,
+                            quantity / 4,
+                            quantity * 3 / 4,
+                            side,
+                            TimeInForce::Gtc,
+                            Some(metadata),
+                        )
+                        .is_ok()
+                    {
                         order_added = true;
                     }
                 }
@@ -418,14 +427,17 @@ fn spawn_maker_thread(
                     } else {
                         BASE_BID_PRICE - 10
                     };
-                    if let Ok(_) = order_book.add_limit_order(
-                        id,
-                        cross_price,
-                        quantity,
-                        side,
-                        TimeInForce::Ioc,
-                        Some(metadata),
-                    ) {
+                    if order_book
+                        .add_limit_order(
+                            id,
+                            cross_price,
+                            quantity,
+                            side,
+                            TimeInForce::Ioc,
+                            Some(metadata),
+                        )
+                        .is_ok()
+                    {
                         // IOC orders that don't fully execute may still leave resting quantity
                         order_added = true;
                     }
@@ -437,27 +449,28 @@ fn spawn_maker_thread(
                     } else {
                         BASE_BID_PRICE - 5
                     };
-                    if let Ok(_) = order_book.add_limit_order(
-                        id,
-                        cross_price,
-                        quantity,
-                        side,
-                        TimeInForce::Fok,
-                        Some(metadata),
-                    ) {
+                    if order_book
+                        .add_limit_order(
+                            id,
+                            cross_price,
+                            quantity,
+                            side,
+                            TimeInForce::Fok,
+                            Some(metadata),
+                        )
+                        .is_ok()
+                    {
                         order_added = true;
                     }
                 }
             }
 
             // Add order ID to queue for potential cancellation if it was successfully added
-            if order_added {
-                if let Ok(mut queue) = order_id_queue.try_lock() {
-                    queue.push_back(id);
-                    // Keep queue size reasonable
-                    if queue.len() > 1000 {
-                        queue.pop_front();
-                    }
+            if order_added && let Ok(mut queue) = order_id_queue.try_lock() {
+                queue.push_back(id);
+                // Keep queue size reasonable
+                if queue.len() > 1000 {
+                    queue.pop_front();
                 }
             }
 
@@ -513,10 +526,10 @@ fn spawn_taker_thread(
             let result = order_book.submit_market_order(id, quantity, side);
 
             // Only count successful matches
-            if let Ok(match_result) = result {
-                if match_result.executed_quantity().unwrap_or(Quantity::new(0)) > Quantity::new(0) {
-                    local_count += 1;
-                }
+            if let Ok(match_result) = result
+                && match_result.executed_quantity().unwrap_or(Quantity::new(0)) > Quantity::new(0)
+            {
+                local_count += 1;
             }
 
             // Update global counter periodically

@@ -177,10 +177,10 @@ fn test_read_write_ratio() -> Result<(), String> {
                 }
 
                 // Update the operation counter
-                if let Ok(mut counters) = thread_counters.lock() {
-                    if thread_id < counters.len() {
-                        counters[thread_id] = local_counter;
-                    }
+                if let Ok(mut counters) = thread_counters.lock()
+                    && thread_id < counters.len()
+                {
+                    counters[thread_id] = local_counter;
                 }
 
                 local_counter
@@ -333,10 +333,10 @@ fn test_hot_spot_contention() -> Result<(), String> {
                 }
 
                 // Update the operation counter
-                if let Ok(mut counters) = thread_counters.lock() {
-                    if thread_id < counters.len() {
-                        counters[thread_id] = local_counter;
-                    }
+                if let Ok(mut counters) = thread_counters.lock()
+                    && thread_id < counters.len()
+                {
+                    counters[thread_id] = local_counter;
                 }
 
                 local_counter
@@ -541,10 +541,10 @@ fn test_price_level_distribution() -> Result<(), String> {
                 }
 
                 // Update the operation counter
-                if let Ok(mut counters) = thread_counters.lock() {
-                    if thread_id < counters.len() {
-                        counters[thread_id] = local_counter as usize;
-                    }
+                if let Ok(mut counters) = thread_counters.lock()
+                    && thread_id < counters.len()
+                {
+                    counters[thread_id] = local_counter as usize;
                 }
 
                 info!(

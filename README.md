@@ -457,7 +457,7 @@ Pre-calculated metrics in snapshots for high-frequency trading:
 
 ## Performance Analysis of the OrderBook System
 
-This analyzes the performance of the OrderBook system based on tests conducted on an Apple M4 Max processor. The data comes from a High-Frequency Trading (HFT) simulation and price level distribution performance tests.
+This analyzes the performance of the OrderBook system based on tests conducted on an Apple M4 Max processor. The data comes from a High-Frequency Trading (HFT) simulation and price level distribution performance tests. The figures below are representative single-run numbers measured on **orderbook-rs 0.9.0** with the bundled examples `orderbook_hft_simulation` and `orderbook_contention_test` (`cargo run --release -p examples --bin <name>`); absolute throughput is workload-, machine-, and run-dependent.
 
 ### 1. High-Frequency Trading (HFT) Simulation
 
@@ -474,50 +474,74 @@ This analyzes the performance of the OrderBook system based on tests conducted o
 
 | Metric | Total Operations | Operations/Second |
 |---------|---------------------|---------------------|
-| Orders Added | 506,105 | 101,152.80 |
-| Orders Matched | 314,245 | 62,806.66 |
-| Orders Cancelled | 204,047 | 40,781.91 |
-| **Total Operations** | **1,024,397** | **204,741.37** |
+| Orders Added | 465,314 | 93,040.99 |
+| Orders Matched | 191,555 | 38,302.02 |
+| Orders Cancelled | 183,700 | 36,731.39 |
+| **Total Operations** | **840,569** | **168,074.41** |
 
 #### Initial vs. Final OrderBook State
 
 | Metric | Initial State | Final State |
 |---------|----------------|---------------|
-| Best Bid | 9,900 | 9,900 |
-| Best Ask | 10,000 | 10,070 |
+| Best Bid | 9,900 | 9,840 |
+| Best Ask | 10,000 | 10,010 |
 | Spread | 100 | 170 |
-| Mid Price | 9,950.00 | 9,985.00 |
-| Total Orders | 1,020 | 34,850 |
+| Mid Price | 9,950.00 | 9,925.00 |
+| Total Orders | 1,020 | 44,987 |
 | Bid Price Levels | 21 | 11 |
-| Ask Price Levels | 21 | 10 |
-| Total Bid Quantity | 7,750 | 274,504 |
-| Total Ask Quantity | 7,750 | 360,477 |
+| Ask Price Levels | 21 | 12 |
+| Total Bid Quantity | 7,750 | 346,031 |
+| Total Ask Quantity | 7,750 | 473,092 |
 
-### 2. Price Level Distribution Performance Tests
+### 2. Contention Pattern Performance Tests
 
 #### Configuration
-- **Test Duration:** 5000 ms (5 seconds)
+- **Threads:** 12
+- **Test Duration:** 3000 ms per sub-test
 - **Concurrent Operations:** Multi-threaded lock-free architecture
 
-#### Price Level Distribution Performance
+#### Read / Write Operation Ratio
+
+Mixed read/write workload over 500 resting orders across 40 price levels;
+the `Read %` is the fraction of operations that are read-only (snapshot /
+best-price / depth queries) versus mutating (add / cancel / match).
 
 | Read % | Operations/Second |
 |------------|---------------------|
-| 0%         | 430,081.91          |
-| 25%        | 17,031.12           |
-| 50%        | 15,965.15           |
-| 75%        | 20,590.32           |
-| 95%        | 42,451.24           |
+| 0%         | 305,435.88          |
+| 25%        | 63,103.90           |
+| 50%        | 51,933.72           |
+| 75%        | 54,960.34           |
+| 95%        | 100,379.54          |
+
+#### Price Level Distribution
+
+Throughput as the resting depth is spread across a varying number of price
+levels (100 orders per level, except the 5- and 1-level cases which pack the
+same orders into fewer levels).
+
+| Price Levels | Operations/Second |
+|--------------|---------------------|
+| 100          | 184,986.35          |
+| 50           | 188,085.24          |
+| 10           | 70,338.52           |
+| 5            | 68,610.25           |
+| 1            | 61,302.26           |
 
 #### Hot Spot Contention Test
 
+All threads hammer a single shared price level (20 hot-spot orders + 480
+regular); higher hot-spot percentages concentrate more operations on that one
+lock-free level, where the `crossbeam-skiplist` + `dashmap` + atomics design
+shines.
+
 | % Operations on Hot Spot | Operations/Second   |
 |--------------------------|---------------------|
-| 0%                       | 2,742,810.37        |
-| 25%                      | 3,414,940.27        |
-| 50%                      | 4,542,931.02        |
-| 75%                      | 8,834,677.82        |
-| 100%                     | 19,403,341.34       |
+| 0%                       | 14,978,484.36       |
+| 25%                      | 19,191,927.99       |
+| 50%                      | 25,890,620.87       |
+| 75%                      | 31,529,898.64       |
+| 100%                     | 31,607,744.24       |
 
 #### Performance Improvements and Deadlock Resolution
 
@@ -527,35 +551,35 @@ The significant performance gains, especially in the "Hot Spot Contention Test,"
 
 - **New Implementation:** The `OrderQueue` was re-designed to use a combination of:
   1. A `dashmap::DashMap` for storing orders, allowing for highly concurrent, O(1) average-case time complexity for insertions, lookups, and removals by `Id`.
-  2. A `crossbeam::queue::SegQueue` that now only stores `Id`s to maintain the crucial First-In-First-Out (FIFO) order for matching.
+  2. A sequence-keyed index (a `crossbeam_skiplist::SkipMap<sequence, Id>`) that maintains the crucial First-In-First-Out (FIFO) order for matching while still allowing O(log n) ordered iteration and deterministic snapshots.
 
 This hybrid approach eliminates the previous bottleneck, allowing threads to operate on the order collection with minimal contention, which is reflected in the massive throughput increase in the hot spot tests.
 
 ### 3. Analysis and Conclusions
 
 #### Overall Performance
-The system demonstrates excellent capability to handle over **200,000 operations per second** in the high-frequency trading simulation, distributed across order creations, matches, and cancellations.
+The system demonstrates excellent capability to handle over **165,000 operations per second** in the high-frequency trading simulation, distributed across order creations, matches, and cancellations.
 
 #### Price Level Distribution Behavior
-- **Optimal Performance Range:** The system performs best with 50-100 price levels, achieving 66,000-67,000 operations per second.
-- **Performance Degradation:** Performance decreases significantly with fewer price levels, dropping to around 23,000-29,000 operations per second with 1-10 levels.
+- **Optimal Performance Range:** The system performs best with 50-100 price levels, achieving roughly 185,000-188,000 operations per second.
+- **Performance Degradation:** Performance decreases with fewer price levels (more per-level contention), dropping to around 61,000-70,000 operations per second with 1-10 levels.
 - **Scalability:** The lock-free architecture demonstrates excellent scalability characteristics across different price level distributions.
 
 #### Hot Spot Contention
-- Surprisingly, performance **increases** as more operations concentrate on a hot spot, reaching its maximum with 100% concentration (19,403,341 ops/s).
+- Surprisingly, performance **increases** as more operations concentrate on a hot spot, reaching its maximum with 100% concentration (31,607,744 ops/s).
 - This counter-intuitive behavior might indicate:
   1. Very efficient cache effects when operations are concentrated in one memory area
   2. Internal optimizations to handle high-contention cases
   3. Benefits of the system's lock-free architecture
 
 #### OrderBook State Behavior
-- During the HFT simulation, the order book handled a significant increase in order volume (from 1,020 to 34,850).
+- During the HFT simulation, the order book handled a significant increase in order volume (from 1,020 to 44,987).
 - The spread increased from 100 to 170, reflecting realistic market behavior under pressure.
-- The final state shows substantial liquidity with over 274,000 bid quantity and 360,000 ask quantity.
+- The final state shows substantial liquidity with over 346,000 bid quantity and 473,000 ask quantity.
 
 ### 4. Practical Implications
 
-- The system is suitable for high-frequency trading environments with the capacity to process over 200,000 operations per second.
+- The system is suitable for high-frequency trading environments with the capacity to process over 165,000 mixed operations per second (and tens of millions of operations per second on a single hot price level).
 - The lock-free architecture proves to be extremely effective at handling contention, especially at hot spots.
 - Optimal performance is achieved with moderate price level distribution (50-100 levels).
 - For real-world use cases, the system demonstrates excellent scalability and maintains performance under concurrent load.

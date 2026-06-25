@@ -56,7 +56,7 @@ fn main() {
 fn fill_orderbook_with_liquidity(book: &OrderBook) {
     // Add bid orders (buy side)
     info!("Adding BID orders (buy side):");
-    let bid_orders = vec![
+    let bid_orders = [
         (3000, 50), // price, quantity
         (2980, 75),
         (2960, 100),
@@ -80,7 +80,7 @@ fn fill_orderbook_with_liquidity(book: &OrderBook) {
     }
 
     info!("\nAdding ASK orders (sell side):");
-    let ask_orders = vec![
+    let ask_orders = [
         (3020, 50), // price, quantity
         (3040, 75),
         (3060, 100),
