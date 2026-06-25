@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.0] — 2026-06-24
 
+### Performance
+
+- **Bump `pricelevel` 0.8.2 → 0.8.3 — fixes per-match over-allocation
+  (PriceLevel#106).** `PriceLevel::match_order` previously pre-sized each
+  `MatchResult` to the *whole* level depth (`order_count`), so a small taker
+  against a deep price level allocated (and immediately freed) a multi-MB
+  transient buffer — a qty-1 market order against a 100 k-deep level allocated
+  ~17.6 MB. 0.8.3 bounds the pre-allocation to
+  `min(incoming_quantity, order_count)`. The `alloc_count` bench's
+  `bytes_alloc/op` drops from `~790 KB` back to `~6 KB` (the per-match cost is
+  now flat in level depth instead of linear); `allocs/op` is unchanged. No
+  source change in orderbook-rs — dependency bump only.
+
 ### Fixed
 
 - **Surface swallowed re-price failures + clamp telemetry (#174).** The special-order
