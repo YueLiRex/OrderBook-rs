@@ -5,7 +5,9 @@ mod tests {
     use crate::orderbook::book::OrderBook;
     use crate::orderbook::error::OrderBookError;
     use crate::orderbook::stp::STPMode;
-    use pricelevel::{Hash32, Id, OrderType, Price, Quantity, Side, TimeInForce, TimestampMs};
+    use pricelevel::{
+        Hash32, Id, OrderType, OrderUpdate, Price, Quantity, Side, TimeInForce, TimestampMs,
+    };
 
     /// Helper: create a non-zero user hash from a single byte value.
     fn user(byte: u8) -> Hash32 {
@@ -1264,5 +1266,214 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("missing user_id"));
         assert!(msg.contains("STP"));
+    }
+
+    // -----------------------------------------------------------------------
+    // #168 — STP self-cross modify atomicity: a re-price that would self-cross
+    // the same user's opposite-side liquidity under CancelTaker / CancelBoth is
+    // rejected BEFORE the original is cancelled, so the original survives.
+    // -----------------------------------------------------------------------
+
+    /// CancelTaker: re-pricing a buy up into the same user's own resting sell is
+    /// rejected pre-cancel with `SelfTradePrevented`; the original buy survives
+    /// unchanged and the opposite-side maker is untouched.
+    #[test]
+    fn test_modify_self_cross_under_cancel_taker_rejected_preserves_original_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelTaker);
+        let u = user(7);
+
+        let buy_id = add_buy_order_with_user(&book, 100, 10, u);
+        let sell_id = add_sell_order_with_user(&book, 110, 10, u);
+
+        // Re-price the buy up to 110 — it would cross the user's own sell.
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: buy_id,
+            new_price: Price::new(110),
+        });
+        assert!(
+            matches!(
+                res,
+                Err(OrderBookError::SelfTradePrevented { taker_order_id, .. }) if taker_order_id == buy_id
+            ),
+            "self-crossing modify must be STP-rejected pre-cancel, got {res:?}"
+        );
+
+        // The original buy survives at its ORIGINAL price, and the sell is intact.
+        let buy = book.get_order(buy_id).expect("original buy must survive");
+        assert_eq!(
+            buy.price().as_u128(),
+            100,
+            "original price must be unchanged"
+        );
+        assert!(
+            book.get_order(sell_id).is_some(),
+            "the maker must be untouched"
+        );
+        assert!(
+            !book.has_traded.load(std::sync::atomic::Ordering::SeqCst),
+            "a rejected modify must emit no trades"
+        );
+    }
+
+    /// CancelBoth: same self-cross scenario is rejected pre-cancel (the taker is
+    /// cancelled under CancelBoth too), preserving the original.
+    #[test]
+    fn test_modify_self_cross_under_cancel_both_rejected_preserves_original_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelBoth);
+        let u = user(8);
+
+        let sell_id = add_sell_order_with_user(&book, 110, 10, u);
+        let bid_maker = add_buy_order_with_user(&book, 90, 10, u);
+
+        // Re-price the sell down to 90 — it would cross the user's own bid.
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: sell_id,
+            new_price: Price::new(90),
+        });
+        assert!(
+            matches!(res, Err(OrderBookError::SelfTradePrevented { .. })),
+            "self-crossing modify under CancelBoth must be rejected pre-cancel, got {res:?}"
+        );
+        let sell = book.get_order(sell_id).expect("original sell must survive");
+        assert_eq!(sell.price().as_u128(), 110, "original price unchanged");
+        assert!(
+            book.get_order(bid_maker).is_some(),
+            "the bid maker untouched"
+        );
+    }
+
+    /// CancelMaker: the taker is rested (the maker is cancelled), so the modify
+    /// must NOT be pre-rejected — it succeeds, re-pricing the order and letting
+    /// STP cancel the same-user maker. Confirms no spurious pre-rejection.
+    #[test]
+    fn test_modify_self_cross_under_cancel_maker_not_prerejected_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelMaker);
+        let u = user(9);
+
+        let buy_id = add_buy_order_with_user(&book, 100, 10, u);
+        let sell_id = add_sell_order_with_user(&book, 110, 10, u);
+
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: buy_id,
+            new_price: Price::new(110),
+        });
+        assert!(
+            res.is_ok(),
+            "CancelMaker modify must not be pre-rejected, got {res:?}"
+        );
+        // The re-priced buy rests; the same-user sell maker is STP-cancelled.
+        assert!(
+            book.get_order(buy_id).is_some(),
+            "the re-priced taker rests"
+        );
+        assert!(
+            book.get_order(sell_id).is_none(),
+            "the same-user maker is cancelled by CancelMaker"
+        );
+    }
+
+    /// CancelTaker, different user: re-pricing into ANOTHER user's resting order
+    /// is a normal cross, not a self-cross, so it must NOT be pre-rejected.
+    #[test]
+    fn test_modify_cross_other_user_under_cancel_taker_allowed_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelTaker);
+        let u = user(1);
+        let other = user(2);
+
+        let buy_id = add_buy_order_with_user(&book, 100, 10, u);
+        let _other_sell = add_sell_order_with_user(&book, 110, 10, other);
+
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: buy_id,
+            new_price: Price::new(110),
+        });
+        assert!(
+            res.is_ok(),
+            "crossing another user's order is not a self-cross, must succeed, got {res:?}"
+        );
+        assert!(
+            book.has_traded.load(std::sync::atomic::Ordering::SeqCst),
+            "the re-priced buy fills against the other user's sell"
+        );
+    }
+
+    /// CancelTaker, precise quantity accounting: if the taker fully fills against
+    /// strictly-higher-priority NON-self depth before the sweep reaches the
+    /// same-user maker, the engine never cancels it — so the modify must NOT be
+    /// pre-rejected. Pins that the check accounts for fillable depth, not just
+    /// the existence of a same-user maker in range.
+    #[test]
+    fn test_modify_self_cross_taker_fills_before_self_maker_allowed_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::new("TEST");
+        book.set_stp_mode(STPMode::CancelTaker);
+        let u = user(3);
+        let other = user(4);
+
+        // Buy 5 at 100. Opposite asks: other-user 10 @ 105 (better), same-user 10 @ 110.
+        let buy_id = add_buy_order_with_user(&book, 100, 5, u);
+        let _other_sell = add_sell_order_with_user(&book, 105, 10, other);
+        let self_sell = add_sell_order_with_user(&book, 110, 10, u);
+
+        // Re-price to 110: the buy (qty 5) fully fills against the other-user
+        // 105 ask and never reaches the same-user 110 ask, so no STP cancel.
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: buy_id,
+            new_price: Price::new(110),
+        });
+        assert!(
+            res.is_ok(),
+            "taker satisfied before the same-user maker must not be rejected, got {res:?}"
+        );
+        assert!(book.has_traded.load(std::sync::atomic::Ordering::SeqCst));
+        // The same-user sell at 110 is untouched (never reached).
+        assert!(
+            book.get_order(self_sell).is_some(),
+            "the same-user maker beyond the fill point is untouched"
+        );
+    }
+
+    /// CancelTaker with `lot_size` set: the self-cross verdict still matches the
+    /// engine. `validate_order_shape` (which enforces lot-alignment) runs before
+    /// the pre-check, so every quantity is a lot multiple and the engine's
+    /// per-level `level_qty_cap` lot-rounding is a no-op — the helper's
+    /// `matchable_quantity` consumption and the engine's sweep agree, leaving no
+    /// sub-lot dust that could strand a same-user maker. Pins that invariant.
+    #[test]
+    fn test_modify_self_cross_under_cancel_taker_with_lot_size_rejected_issue_168() {
+        let mut book: OrderBook<()> = OrderBook::with_lot_size("TEST", 5);
+        book.set_stp_mode(STPMode::CancelTaker);
+        let u = user(5);
+        let other = user(6);
+
+        // Buy 10 (lot-aligned) at 100. Opposite asks: other-user 5 @ 105,
+        // same-user 10 @ 110. Re-pricing to 110 fills 5 against the other-user
+        // ask (remaining 5) then reaches the same-user 110 ask with remaining>0
+        // → the engine cancels the taker, so the pre-check must reject.
+        let buy_id = add_buy_order_with_user(&book, 100, 10, u);
+        let _other_sell = add_sell_order_with_user(&book, 105, 5, other);
+        let self_sell = add_sell_order_with_user(&book, 110, 10, u);
+
+        let res = book.update_order(OrderUpdate::UpdatePrice {
+            order_id: buy_id,
+            new_price: Price::new(110),
+        });
+        assert!(
+            matches!(res, Err(OrderBookError::SelfTradePrevented { .. })),
+            "lot-sized self-cross must be rejected pre-cancel, got {res:?}"
+        );
+        let buy = book.get_order(buy_id).expect("original buy survives");
+        assert_eq!(buy.price().as_u128(), 100, "original price unchanged");
+        assert!(
+            book.get_order(self_sell).is_some(),
+            "same-user maker untouched"
+        );
+        assert!(
+            !book.has_traded.load(std::sync::atomic::Ordering::SeqCst),
+            "a rejected modify emits no trades"
+        );
     }
 }
