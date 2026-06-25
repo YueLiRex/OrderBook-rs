@@ -27,32 +27,33 @@ static A: CountingAllocator<System> = CountingAllocator::new(System);
 workload as `mixed_70_20_10_hdr` but reports `allocs_per_op` and
 `bytes_alloc/op` over the measurement window (200 000 warmup +
 1 000 000 measured). A reference run on the M4 Max host (orderbook-rs
-0.9.0):
+0.9.0, `pricelevel` 0.8.3):
 
-| counter        | value           |
-|----------------|-----------------|
-| allocs         | 14 945 144      |
-| deallocs       | 14 834 805      |
-| bytes_alloc    | 790 864 668 474 |
-| bytes_dealloc  | 790 836 738 974 |
-| **allocs/op**  | **14.95**       |
-| bytes_alloc/op | 790 865         |
+| counter        | value         |
+|----------------|---------------|
+| allocs         | 18 809 336    |
+| deallocs       | 18 698 998    |
+| bytes_alloc    | 6 180 736 806 |
+| bytes_dealloc  | 6 152 807 510 |
+| **allocs/op**  | **18.81**     |
+| bytes_alloc/op | 6 181         |
 
-`allocs/op` is the headline number for "what does the matching engine
-cost in alloc pressure on a realistic workload" — useful as a
-regression signal much more than as an absolute target. It is balanced
-(allocs ≈ deallocs, no leak) and is in the same ballpark as the 0.7.0
-reference (`~17.76`). Note `allocs/op` is workload-randomness-sensitive
-on this synthetic stream — repeat runs land in the `~15–19` range.
+Both counters are balanced (allocs ≈ deallocs, no leak). `allocs/op` is
+the headline number for "what does the matching engine cost in alloc
+pressure on a realistic workload" — useful as a regression signal much
+more than as an absolute target; it is in the same ballpark as the
+0.7.0 reference (`~17.76`) and is workload-randomness-sensitive on this
+synthetic stream (repeat runs land in the `~15–19` range).
+`bytes_alloc/op` (`~6 KB`) is likewise close to the 0.7.0 reference
+(`~4 926`).
 
-> **Note (`bytes_alloc/op`).** On this monotonically-growing
-> deep-book workload the per-op *bytes* allocated is large and much
-> higher than the historical 0.7.0 reference (`~4 926`). It is dominated
-> by the few large transient buffers a market sweep allocates against a
-> very deep price level (the workload concentrates ~700 k resting orders
-> into a narrow band, so individual levels get thousands of orders deep).
-> Treat `bytes_alloc/op` as a coarse signal only; `allocs/op` is the
-> stable regression metric and is what CI guards.
+> **Fixed in `pricelevel` 0.8.3 (PriceLevel#106).** Earlier `pricelevel`
+> 0.8.2 pre-sized each match `MatchResult` to the *whole* level depth, so
+> a qty-1 market order against a deep level allocated a multi-MB transient
+> buffer (`bytes_alloc/op` ballooned to `~790 KB`). 0.8.3 bounds the
+> pre-allocation to `min(incoming_quantity, order_count)`, so a small
+> taker no longer reserves the level — `bytes_alloc/op` is back to the
+> low-KB range.
 
 The integration test `tests/alloc_budget.rs` runs a smaller 10 000-op
 slice and asserts `allocs/op` stays under a fixed ceiling to catch
