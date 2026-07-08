@@ -46,9 +46,9 @@ This order book engine is built with the following design principles:
 - **Research**: Platform for studying market microstructure and order flow
 - **Educational**: Reference implementation for understanding modern exchange architecture
 
-### What's New in Version 0.9.0
+### What's New in Version 0.9.1
 
-#### v0.9.0 — `add_order_with_result` (#184)
+#### v0.9.1 — `add_order_with_result` (#184)
 
 - **New public API** on [`OrderBook<T>`]: `add_order_with_result` submits an
   order and returns the `TradeResult` produced by the match directly —
@@ -57,6 +57,8 @@ This order book engine is built with the following design principles:
   installed listener still fires with the exact same `TradeResult`.
   `add_order` is unchanged in behavior and stays free of the extra
   `MatchResult` clone when no listener is installed.
+
+### What's New in Version 0.9.0
 
 #### v0.9.0 — Upgrade to `pricelevel` 0.8.0 (#130)
 
