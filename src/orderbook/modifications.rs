@@ -1017,11 +1017,60 @@ where
 
     /// Add a new order to the book, automatically matching it if it's aggressive.
     ///
+    /// This convenience method calls the same implementation as
+    /// [`Self::add_order_with_result`] but discards the trade result. When no
+    /// trade listener is installed, the `TradeResult` is never constructed, so
+    /// this path stays free of the extra `MatchResult` clone.
+    ///
     /// # Errors
     /// Returns [`OrderBookError::KillSwitchActive`] when the kill switch
     /// is engaged. The check runs before any cache invalidation, STP
     /// validation, tick/lot validation, or matching work.
-    pub fn add_order(&self, mut order: OrderType<T>) -> Result<Arc<OrderType<T>>, OrderBookError> {
+    #[inline]
+    pub fn add_order(&self, order: OrderType<T>) -> Result<Arc<OrderType<T>>, OrderBookError> {
+        self.add_order_inner(order, false).map(|(order, _)| order)
+    }
+
+    /// Add a new order to the book, automatically matching it if it's
+    /// aggressive, and additionally return the [`TradeResult`] produced by the
+    /// match directly to the caller.
+    ///
+    /// The trade result is `None` when the order produced no fills (it rested
+    /// on the book, or was admitted without matching). When a trade listener
+    /// is installed, the listener is invoked with the exact same `TradeResult`
+    /// that is returned here — same fills, same fees, same `engine_seq`.
+    ///
+    /// On error paths that follow real fills (an unfillable IOC remainder, or
+    /// a self-trade-prevention cancellation after earlier non-self fills) the
+    /// typed error is returned instead, so those fills reach the trade
+    /// listener only.
+    ///
+    /// Every trade-producing call consumes one `engine_seq` tick, even when no
+    /// trade listener is installed (plain [`Self::add_order`] only consumes one
+    /// when a listener is present). `engine_seq` is per-instance and not
+    /// replay-reproducible; consumers that need a stable ordering key should
+    /// use the journal's `sequence_num` / `timestamp_ns` instead.
+    ///
+    /// # Errors
+    /// Returns [`OrderBookError::KillSwitchActive`] when the kill switch
+    /// is engaged. The check runs before any cache invalidation, STP
+    /// validation, tick/lot validation, or matching work.
+    pub fn add_order_with_result(
+        &self,
+        order: OrderType<T>,
+    ) -> Result<(Arc<OrderType<T>>, Option<TradeResult>), OrderBookError> {
+        self.add_order_inner(order, true)
+    }
+
+    /// Shared implementation behind [`Self::add_order`] and
+    /// [`Self::add_order_with_result`]. `want_result` gates `TradeResult`
+    /// construction so the plain `add_order` path only pays for it when an
+    /// installed trade listener needs it anyway.
+    fn add_order_inner(
+        &self,
+        mut order: OrderType<T>,
+        want_result: bool,
+    ) -> Result<(Arc<OrderType<T>>, Option<TradeResult>), OrderBookError> {
         self.check_kill_switch_or_reject(order.id())?;
         // Pre-trade risk gate: per-account open-orders / notional /
         // price band. No-op when no `RiskConfig` is installed.
@@ -1096,19 +1145,33 @@ where
             order.user_id(),
         )?;
 
+        // Emit trades BEFORE any early return below: the STP taker-cancel and
+        // unfillable-IOC paths return `Err` after real (non-self) fills already
+        // executed, and those fills must still reach the metrics and the trade
+        // listener. The `TradeResult` is only constructed when someone consumes
+        // it — the installed listener and/or an `add_order_with_result` caller —
+        // so the plain `add_order` hot path skips the `MatchResult` clone.
         let trades_emitted = match_result.trades().len() as u64;
-        if trades_emitted > 0 {
+        let trade_result = if trades_emitted > 0 {
             crate::orderbook::metrics::record_trades(trades_emitted);
-            if let Some(ref listener) = self.trade_listener {
+            let listener = self.trade_listener.as_ref();
+            if want_result || listener.is_some() {
                 let mut trade_result = TradeResult::with_fees(
                     self.symbol.clone(),
                     match_result.clone(),
                     self.fee_schedule,
                 );
                 trade_result.engine_seq = self.next_engine_seq();
-                listener(&trade_result) // emit trade events to listener
+                if let Some(listener) = listener {
+                    listener(&trade_result) // emit trade events to listener
+                }
+                Some(trade_result)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         // True (non-self) executed quantity. `remaining_quantity` only decrements on
         // real trades, so STP-prevented self-fills never count toward it.
@@ -1238,7 +1301,7 @@ where
 
             // Convert back to generic type for return
             let generic_order = self.convert_from_unit_type(&unit_order_arc);
-            Ok(Arc::new(generic_order))
+            Ok((Arc::new(generic_order), trade_result))
         } else {
             // The order was fully matched
             self.track_state(
@@ -1247,7 +1310,7 @@ where
                     filled_quantity: original_qty,
                 },
             );
-            Ok(Arc::new(order))
+            Ok((Arc::new(order), trade_result))
         }
     }
 }
